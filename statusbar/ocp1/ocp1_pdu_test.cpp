@@ -155,7 +155,7 @@ TEST(ocp1_pdu, refuses_malformed_pdus)
         EXPECT_EQ(result.error(), make_error_code(error));
     };
     refused(0, 0x3C, Ocp1Error::invalid_sync);
-    refused(2, 0x02, Ocp1Error::unsupported_version);
+    refused(2, 0x00, Ocp1Error::unsupported_version);
     refused(6, 0x14, Ocp1Error::invalid_pdu_size);
     refused(9, 0x02, Ocp1Error::invalid_message_count);
     refused(13, 0x0B, Ocp1Error::invalid_message_size);
@@ -170,6 +170,21 @@ TEST(ocp1_pdu, refuses_malformed_pdus)
     auto const bad_type = parse_pdu(event);
     EXPECT_FALSE(bad_type.has_value());
     EXPECT_EQ(bad_type.error(), make_error_code(Ocp1Error::invalid_notification_type));
+
+    // a higher protocol version is accepted, as SwiftOCA accepts it: some controllers write one
+    auto newer = good;
+    newer[2] = 0x07;
+    EXPECT_TRUE(parse_pdu(newer).has_value());
+
+    // a notification with no data: SwiftOCA refuses one, so it is never written or read
+    auto const empty_event = from_hex("3b0001000000160500010000000d000010000001000400");
+    auto const no_data = parse_pdu(empty_event);
+    EXPECT_FALSE(no_data.has_value());
+    EXPECT_EQ(no_data.error(), make_error_code(Ocp1Error::invalid_message_size));
+    std::array<uint8_t, 64> out{};
+    auto const unwritten = serialize_pdu(Notification{.event = {4096, {1, 4}}}, out);
+    EXPECT_FALSE(unwritten.has_value());
+    EXPECT_EQ(unwritten.error(), make_error_code(Ocp1Error::invalid_message_size));
 
     // a PDU whose header claims the bytes it has, but too few for its message header
     auto const short_pdu = from_hex("3b0001000000100300010000000a000000");
@@ -206,6 +221,16 @@ TEST(ocp1_pdu, refuses_to_write_over_its_own_parameters)
     auto const bad = serialize_pdu(miscounted, other);
     EXPECT_FALSE(bad.has_value());
     EXPECT_EQ(bad.error(), make_error_code(Ocp1Error::invalid_parameter_count));
+}
+
+TEST(ocp1_pdu, ids_are_records)
+{
+    // OcaEvent as a parameter (AddSubscription2 takes one): emitter, then the id
+    std::array<uint8_t, 8> buffer{};
+    EXPECT_TRUE(encode_values(buffer, Event{4096, {1, 4}}).has_value());
+    EXPECT_EQ(bytes(buffer), (std::vector<uint8_t>{0x00, 0x00, 0x10, 0x00, 0x00, 0x01, 0x00, 0x04}));
+    EXPECT_TRUE(decode_value<Event>(buffer).value_or(Event{}) == (Event{4096, {1, 4}}));
+    EXPECT_TRUE(decode_value<MethodId>(std::span{buffer}.first(4)).value_or(MethodId{}) == (MethodId{0, 4096}));
 }
 
 TEST_MAIN(statusbar_ocp1, ocp1_pdu_test)

@@ -198,6 +198,46 @@ TEST(ocp1_codec, writes_an_interval_with_its_bounds)
     Interval<float> const half_open{.min = 0.0F, .max = 1.0F, .bounds = interval_bounds::MIN_INCLUSIVE};
     auto const value = decode_value<Interval<float>>(encoded(half_open));
     EXPECT_TRUE(value.value_or(Interval<float>{}) == half_open);
+    // an omitted bound keeps its place: SwiftOCA writes 5... as min 5, max 5, [minInclusive, maxOmitted]
+    Interval<uint16_t> const from_five{.min = 5, .max = 5, .bounds = interval_bounds::MIN_INCLUSIVE | interval_bounds::MAX_OMITTED};
+    EXPECT_EQ(encoded(from_five), (std::vector<uint8_t>{0x00, 0x05, 0x00, 0x05, 0x00, 0x06}));
+}
+
+TEST(ocp1_codec, lists_may_hold_strings_and_records)
+{
+    std::vector<std::string> const names{"a", "Bühne", ""};
+    EXPECT_EQ(
+        encoded(names),
+        (std::vector<uint8_t>{0x00, 0x03, 0x00, 0x01, 'a', 0x00, 0x05, 'B', 0xC3, 0xBC, 'h', 'n', 'e', 0x00, 0x00}));
+    auto const value = decode_value<std::vector<std::string>>(encoded(names));
+    EXPECT_TRUE(value.value_or(std::vector<std::string>{}) == names);
+    Map<std::string, std::vector<PortId>> const by_name{{{"in", {{1, 1}, {1, 2}}}}};
+    auto const map = decode_value<Map<std::string, std::vector<PortId>>>(encoded(by_name));
+    EXPECT_TRUE(map.value_or(Map<std::string, std::vector<PortId>>{}) == by_name);
+}
+
+TEST(ocp1_codec, a_string_is_limited_by_scalars_not_bytes)
+{
+    // 65535 two-byte scalars: 131070 bytes, and the largest OcaString
+    std::string largest_text;
+    for (size_t i = 0; i < MAX_COUNT; ++i) {
+        largest_text += "\xC3\xBC";
+    }
+    std::vector<uint8_t> buffer(largest_text.size() + 2);
+    auto const written = encode_values(buffer, largest_text);
+    EXPECT_TRUE(written.has_value());
+    EXPECT_EQ(written.value_or(0), largest_text.size() + 2);
+    EXPECT_EQ(buffer[0], uint8_t{0xFF});
+    EXPECT_EQ(buffer[1], uint8_t{0xFF});
+    auto const back = decode_value<std::string>(std::span{buffer}.first(written.value_or(0)));
+    EXPECT_TRUE(back.value_or("") == largest_text);
+
+    // one scalar more does not fit a 16-bit count
+    largest_text += 'x';
+    buffer.resize(largest_text.size() + 2);
+    auto const refused = encode_values(buffer, largest_text);
+    EXPECT_FALSE(refused.has_value());
+    EXPECT_EQ(refused.error(), make_error_code(Ocp1Error::too_long));
 }
 
 TEST(ocp1_codec, writes_a_record_as_its_fields)

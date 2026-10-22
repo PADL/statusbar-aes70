@@ -203,9 +203,16 @@ concept FixedWidth = std::same_as<T, bool> || std::same_as<T, uint8_t> || std::s
     std::same_as<T, uint64_t> || std::same_as<T, int8_t> || std::same_as<T, int16_t> || std::same_as<T, int32_t> ||
     std::same_as<T, int64_t> || std::same_as<T, float> || std::same_as<T, double>;
 
-/// A fixed-width integer, boolean or float, or an enum with a fixed-width underlying type
+/// An AES70 enumeration: an enum declared over OcaUint8 or OcaUint16 (AES70 has no
+/// wider ones). An enum with no declared base is `int` and is refused, since it would
+/// go out as four bytes. Decoding does not check that the value names an enumerator.
 template <typename T>
-concept Scalar = FixedWidth<T> || (std::is_enum_v<T> && FixedWidth<std::underlying_type_t<T>>);
+concept Enumeration =
+    std::is_enum_v<T> && (std::same_as<std::underlying_type_t<T>, uint8_t> || std::same_as<std::underlying_type_t<T>, uint16_t>);
+
+/// A fixed-width integer, boolean or float, or an AES70 enumeration
+template <typename T>
+concept Scalar = FixedWidth<T> || Enumeration<T>;
 
 template <Scalar T>
 void encode(Encoder& encoder, T const value) noexcept

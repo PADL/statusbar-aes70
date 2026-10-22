@@ -3,6 +3,8 @@
 
 #include "statusbar/ocp1/ocp1_codec.hpp"
 
+#include "statusbar/buffer/span_utils.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -130,7 +132,7 @@ auto Decoder::take(size_t const length) noexcept -> std::span<uint8_t const>
 
 void encode(Encoder& encoder, std::string_view const text)
 {
-    auto const bytes = std::span{reinterpret_cast<uint8_t const*>(text.data()), text.size()};
+    auto const bytes = make_const_span(text);
     auto const walk = scan(bytes, SIZE_MAX);
     if (walk.bytes != bytes.size()) {
         encoder.fail(Ocp1Error::invalid_utf8);
@@ -161,7 +163,7 @@ void decode(Decoder& decoder, std::string& text)
     }
     // fewer scalars than counted: asking for more than there is fails as a short buffer
     auto const bytes = decoder.take(walk.scalars == count ? walk.bytes : rest.size() + 1);
-    text.assign(reinterpret_cast<char const*>(bytes.data()), bytes.size());
+    text.assign(as_string_view(bytes));
 }
 
 void encode(Encoder& encoder, Blob const& blob)

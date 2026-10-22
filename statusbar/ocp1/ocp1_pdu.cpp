@@ -20,11 +20,19 @@ struct Overloaded : Ts...
     using Ts::operator()...;
 };
 
-/// A message's PDU type and size (its header and parameters or data)
+auto valid(Parameters const& parameters) noexcept -> bool
+{
+    return parameters.count == 0 ? parameters.data.empty() : parameters.count <= parameters.data.size();
+}
+
+/// What framing a message needs: its PDU type, its size (header and payload), its
+/// payload, and whether its count and payload agree
 struct Framing
 {
     MessageType type;
     size_t size;
+    std::span<uint8_t const> payload;
+    bool valid;
 };
 
 auto framing(Message const& message) noexcept -> Framing
@@ -33,34 +41,30 @@ auto framing(Message const& message) noexcept -> Framing
         Overloaded{
             [](Command const& command) {
                 return Framing{
-                    command.response_required ? MessageType::command_response_required : MessageType::command,
-                    CommandHeader::LENGTH + command.parameters.data.size()};
+                    .type = command.response_required ? MessageType::command_response_required : MessageType::command,
+                    .size = CommandHeader::LENGTH + command.parameters.data.size(),
+                    .payload = command.parameters.data,
+                    .valid = valid(command.parameters),
+                };
             },
             [](Response const& response) {
-                return Framing{MessageType::response, ResponseHeader::LENGTH + response.parameters.data.size()};
+                return Framing{
+                    .type = MessageType::response,
+                    .size = ResponseHeader::LENGTH + response.parameters.data.size(),
+                    .payload = response.parameters.data,
+                    .valid = valid(response.parameters),
+                };
             },
             [](Notification const& notification) {
-                return Framing{MessageType::notification2, Notification2Header::LENGTH + notification.data.size()};
+                return Framing{
+                    .type = MessageType::notification2,
+                    .size = Notification2Header::LENGTH + notification.data.size(),
+                    .payload = notification.data,
+                    .valid = !notification.data.empty(),
+                };
             },
         },
         message);
-}
-
-/// The message's parameters or data
-auto payload(Message const& message) noexcept -> std::span<uint8_t const>
-{
-    return std::visit(
-        Overloaded{
-            [](Command const& command) { return command.parameters.data; },
-            [](Response const& response) { return response.parameters.data; },
-            [](Notification const& notification) { return notification.data; },
-        },
-        message);
-}
-
-auto valid(Parameters const& parameters) noexcept -> bool
-{
-    return parameters.count == 0 ? parameters.data.empty() : parameters.count <= parameters.data.size();
 }
 
 auto overlaps(std::span<uint8_t const> const a, std::span<uint8_t> const b) noexcept -> bool
@@ -106,7 +110,7 @@ auto parse_pdu(std::span<uint8_t const> const pdu) noexcept -> StatusValue<Messa
     if (header.sync != SYNC) {
         return failure(Ocp1Error::invalid_sync);
     }
-    if (header.protocol_version != PROTOCOL_VERSION) {
+    if (header.protocol_version < PROTOCOL_VERSION) {
         return failure(Ocp1Error::unsupported_version);
     }
     if (size_t{header.pdu_size.get()} + 1 != pdu.size()) {
@@ -174,6 +178,9 @@ auto parse_pdu(std::span<uint8_t const> const pdu) noexcept -> StatusValue<Messa
             if (notification.notification_type > static_cast<uint8_t>(NotificationType::exception)) {
                 return failure(Ocp1Error::invalid_notification_type);
             }
+            if (body.size() == Notification2Header::LENGTH) {
+                return failure(Ocp1Error::invalid_message_size);
+            }
             return Notification{
                 .event =
                     {.emitter = notification.emitter,
@@ -196,17 +203,16 @@ auto serialized_pdu_size(Message const& message) noexcept -> size_t
 
 auto serialize_pdu(Message const& message, std::span<uint8_t> const buffer) noexcept -> StatusValue<size_t>
 {
-    auto const [type, length] = framing(message);
+    auto const [type, length, payload, valid] = framing(message);
     if (PduHeader::LENGTH - 1 + length > UINT32_MAX) {
         return failure(Ocp1Error::invalid_pdu_size);
     }
-    if (overlaps(payload(message), buffer)) {
+    if (overlaps(payload, buffer)) {
         return failure(Ocp1Error::aliased_parameters);
     }
-    auto const* const command = std::get_if<Command>(&message);
-    auto const* const response = std::get_if<Response>(&message);
-    if ((command != nullptr && !valid(command->parameters)) || (response != nullptr && !valid(response->parameters))) {
-        return failure(Ocp1Error::invalid_parameter_count);
+    if (!valid) {
+        return failure(
+            std::holds_alternative<Notification>(message) ? Ocp1Error::invalid_message_size : Ocp1Error::invalid_parameter_count);
     }
 
     PduHeader header{};

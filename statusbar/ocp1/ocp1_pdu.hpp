@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <tuple>
 #include <variant>
 
 namespace statusbar::ocp1 {
@@ -39,6 +40,8 @@ using ieee::octet_t;
 using ieee::quadlet_t;
 
 inline constexpr uint8_t SYNC = 0x3B;
+/// The version written; AES70-3 says it is always 1, but some controllers write a
+/// higher one (the AES70 revision, it seems), so parsing accepts any version >= 1.
 inline constexpr uint16_t PROTOCOL_VERSION = 1;
 
 /// OcaMessageType
@@ -82,12 +85,13 @@ enum class NotificationType : uint8_t
     exception,
 };
 
-/// OcaMethodID
+/// OcaMethodID; a record, for methods that take one
 struct MethodId
 {
     uint16_t def_level{};
     uint16_t index{};
 
+    auto fields(this auto& self) noexcept { return std::tie(self.def_level, self.index); }
     auto operator==(MethodId const&) const -> bool = default;
 };
 
@@ -97,6 +101,7 @@ struct EventId
     uint16_t def_level{};
     uint16_t index{};
 
+    auto fields(this auto& self) noexcept { return std::tie(self.def_level, self.index); }
     auto operator==(EventId const&) const -> bool = default;
 };
 
@@ -106,6 +111,7 @@ struct Event
     uint32_t emitter{};
     EventId id;
 
+    auto fields(this auto& self) noexcept { return std::tie(self.emitter, self.id); }
     auto operator==(Event const&) const -> bool = default;
 };
 
@@ -133,6 +139,8 @@ struct Response
     Parameters parameters;
 };
 
+/// A Notification2. Its data is never empty: an event carries its parameters and an
+/// exception its OcaNotification2ExceptionData, and SwiftOCA refuses one without.
 struct Notification
 {
     Event event;
@@ -203,8 +211,8 @@ static_assert(sizeof(Notification2Header) == Notification2Header::LENGTH);
 [[nodiscard]] auto pdu_size(std::span<uint8_t const> header, size_t maximum) noexcept -> StatusValue<std::optional<size_t>>;
 
 /// Parse a whole PDU holding one message. Its parameters or data view `pdu`. A
-/// status code or notification type AES70 does not define, or a parameter count
-/// its parameters cannot hold, is an error.
+/// status code or notification type AES70 does not define, a parameter count its
+/// parameters cannot hold, or a notification with no data is an error.
 [[nodiscard]] auto parse_pdu(std::span<uint8_t const> pdu) noexcept -> StatusValue<Message>;
 
 /// The size of `message` as a PDU.
