@@ -146,24 +146,32 @@ void encode(Encoder& encoder, std::string_view const text)
     encoder.writer().append(bytes);
 }
 
-void decode(Decoder& decoder, std::string& text)
+namespace {
+
+/// The bytes of `count` UTF-8 scalars at the decoder: the count is of scalars, so the byte
+/// length is known only once they are walked
+auto take_scalars(Decoder& decoder, uint16_t const count) -> std::span<uint8_t const>
 {
-    // the count is of scalars, so the byte length is known only once they are walked
-    uint16_t count{};
-    decoder.get(count);
-    text.clear();
-    if (!decoder) {
-        return;
-    }
     auto const rest = decoder.rest();
     auto const walk = scan(rest, count);
     if (!walk.well_formed) {
         decoder.fail(Ocp1Error::invalid_utf8);
-        return;
+        return {};
     }
     // fewer scalars than counted: asking for more than there is fails as a short buffer
-    auto const bytes = decoder.take(walk.scalars == count ? walk.bytes : rest.size() + 1);
-    text.assign(as_string_view(bytes));
+    return decoder.take(walk.scalars == count ? walk.bytes : rest.size() + 1);
+}
+
+}  // namespace
+
+void decode(Decoder& decoder, std::string& text)
+{
+    uint16_t count{};
+    decoder.get(count);
+    text.clear();
+    if (decoder) {
+        text.assign(as_string_view(take_scalars(decoder, count)));
+    }
 }
 
 void encode(Encoder& encoder, Blob const& blob)
