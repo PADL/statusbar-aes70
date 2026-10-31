@@ -12,6 +12,6 @@ own, such as a private control socket. For a complete AES70 stack, see
 
 | Module | What it is |
 | --- | --- |
-| `ocp1` | AES70-3 values (integers, floats, booleans, strings counted in Unicode scalars, blobs, lists, maps, intervals, and records through `fields()`) with an `Encoder` and `Decoder` over statusbar's buffer builders; PDU framing and the Command, Response and Notification2 messages |
+| `ocp1` | AES70-3 values (integers, floats, booleans, strings counted in Unicode scalars, blobs, lists, maps, intervals, and records through `fields()`) with an `Encoder` and `Decoder` over statusbar's buffer builders; PDU framing and the Command, Response and Notification2 messages; the AES70-21 AES67 endpoint adaptation data (`Aes67EndpointAdaptationData`) |
 
 Status: early development.
