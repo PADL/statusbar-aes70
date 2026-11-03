@@ -40,12 +40,13 @@ if(NOT STATUSBAR_AGGREGATE_BUILD)
     "AES70 OCP.1 wire encoding: values, PDUs and messages.")
   set(CPACK_PACKAGE_VENDOR "PADL Software Pty Ltd")
   set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Luke Howard <lukeh@padl.com>")
+  # Headers, static libraries and the CMake package config only: no runtime
+  # package, which dpkg would remove as "completely replaced" by -dev.
+  set(CPACK_COMPONENTS_ALL devel)
   set(CPACK_DEBIAN_DEVEL_PACKAGE_DEPENDS
-      "statusbar-aes70 (>= ${PROJECT_VERSION}), statusbar-core-dev (>= ${statusbar-core_VERSION})"
-  )
+      "statusbar-core-dev (>= ${statusbar-core_VERSION})")
   set(CPACK_RPM_DEVEL_PACKAGE_REQUIRES
-      "statusbar-aes70 >= ${PROJECT_VERSION}, statusbar-core-devel >= ${statusbar-core_VERSION}"
-  )
+      "statusbar-core-devel >= ${statusbar-core_VERSION}")
   set(CPACK_COMPONENT_DEVEL_DESCRIPTION
       "C++ headers, static libraries and CMake package config")
   include(CPack)
