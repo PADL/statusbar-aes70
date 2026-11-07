@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: MIT
 
 /// The AES70-21 AES67 adaptation records an OcaMediaStreamEndpoint's AdaptationData holds,
-/// as OCP.1 values: Aes67EndpointIPParameters and Aes67EndpointAdaptationData.
+/// as OCP.1 values: Aes67EndpointIPParameters, Aes67MediaIDType and Aes67EndpointAdaptationData.
 
 #include "statusbar/ocp1/ocp1_codec.hpp"
 
@@ -21,6 +21,19 @@ inline constexpr uint16_t AES67_UNICAST_CAPABLE = 1U << 0U;
 inline constexpr uint16_t AES67_MULTICAST_CAPABLE = 1U << 1U;
 inline constexpr uint16_t AES67_INSECURE_CAPABLE = 1U << 2U;
 inline constexpr uint16_t AES67_DEFAULT_SECURITY_CAPABLE = 1U << 3U;
+
+/// Aes67MediaIDType (AES70-21 Clause 10.2.4): what kind of identifier an Aes67EndpointAdaptationData.MediaID is.
+/// The draft gives no width; it is an OcaUint8, as AES70-3 marshals its enumerations.
+enum class Aes67MediaIDType : uint8_t
+{
+    none = 0,                ///< no identifier: the SDP holds one media description
+    ordinal = 1,             ///< the media description's 1-based position, in decimal
+    label = 2,               ///< its "a=label" value (RFC 4574)
+    mid = 3,                 ///< its "a=mid" value (RFC 5888)
+    port_no = 4,             ///< its "m=" UDP port, in decimal
+    transport_address4 = 5,  ///< "IPv4-address:port"
+    transport_address6 = 6,  ///< "[IPv6-address]:port"; unused by AES67
+};
 
 /// Aes67EndpointIPParameters (AES70-21): an endpoint's addresses on one
 /// network assignment; a DSCP or COS of -1 leaves it to the device.
@@ -64,7 +77,8 @@ struct Aes67EndpointAdaptationData
     float presentation_time_offset{0};
     std::string media_info;
     std::string active_sdp;
-    uint32_t stream_id{0};
+    Aes67MediaIDType media_id_type{Aes67MediaIDType::none};  ///< kind of `media_id`
+    std::string media_id;                                    ///< the media description of `active_sdp` in effect
 
     auto fields(this auto& self) noexcept
     {
@@ -79,7 +93,8 @@ struct Aes67EndpointAdaptationData
             self.presentation_time_offset,
             self.media_info,
             self.active_sdp,
-            self.stream_id);
+            self.media_id_type,
+            self.media_id);
     }
     auto operator==(Aes67EndpointAdaptationData const&) const -> bool = default;
 };

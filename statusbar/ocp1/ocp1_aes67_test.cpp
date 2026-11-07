@@ -39,7 +39,8 @@ auto output_record() -> Aes67EndpointAdaptationData
         .remote_control_type = "NONE",
         .transmission_capabilities = AES67_UNICAST_CAPABLE | AES67_MULTICAST_CAPABLE | AES67_INSECURE_CAPABLE,
         .active_sdp = "v=0\r\n",
-        .stream_id = 7,
+        .media_id_type = Aes67MediaIDType::mid,
+        .media_id = "a",
     };
 }
 
@@ -71,7 +72,9 @@ TEST(ocp1_aes67, the_record_encodes_as_swiftoca_writes_it)
                                    "0000"      // MediaInfo
                                    "0005"
                                    "763d300d0a"  // ActiveSDP
-                                   "00000007");  // StreamID
+                                   "03"          // MediaIDType Mid
+                                   "0001"
+                                   "61");  // MediaID
     auto const blob = encode_adaptation_data(output_record());
     EXPECT_TRUE(blob && blob->bytes == expected);
     auto const decoded = decode_adaptation_data(expected);
