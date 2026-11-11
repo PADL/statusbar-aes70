@@ -38,6 +38,11 @@ if(NOT STATUSBAR_AGGREGATE_BUILD)
   statusbar_package_cpack_defaults(
     NAME aes70 DESCRIPTION
     "AES70 OCP.1 wire encoding: values, PDUs and messages.")
+  # PADL's packages carry padl- (the project and its CMake package stay
+  # statusbar-aes70).
+  set(CPACK_PACKAGE_NAME padl-aes70)
+  set(CPACK_DEBIAN_DEVEL_PACKAGE_NAME padl-aes70-dev)
+  set(CPACK_RPM_DEVEL_PACKAGE_NAME padl-aes70-devel)
   set(CPACK_PACKAGE_VENDOR "PADL Software Pty Ltd")
   set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Luke Howard <lukeh@padl.com>")
   # Headers, static libraries and the CMake package config only: no runtime
