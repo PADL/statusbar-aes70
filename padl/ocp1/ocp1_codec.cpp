@@ -1,7 +1,7 @@
 // Copyright 2026 PADL Software Pty Ltd
 // SPDX-License-Identifier: MIT
 
-#include "statusbar/ocp1/ocp1_codec.hpp"
+#include "padl/ocp1/ocp1_codec.hpp"
 
 #include "statusbar/buffer/span_utils.hpp"
 
@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace statusbar::ocp1 {
+namespace padl::ocp1 {
 
 namespace {
 
@@ -104,18 +104,18 @@ auto scan(std::span<uint8_t const> const bytes, size_t const limit) noexcept -> 
 
 }  // namespace
 
-auto Encoder::status() const noexcept -> Status
+auto Encoder::status() const noexcept -> statusbar::Status
 {
     if (error_) {
-        return failure(error_);
+        return statusbar::failure(error_);
     }
     return writer_.status();
 }
 
-auto Decoder::status() const noexcept -> Status
+auto Decoder::status() const noexcept -> statusbar::Status
 {
     if (error_) {
-        return failure(error_);
+        return statusbar::failure(error_);
     }
     return reader_.status();
 }
@@ -132,7 +132,7 @@ auto Decoder::take(size_t const length) noexcept -> std::span<uint8_t const>
 
 void encode(Encoder& encoder, std::string_view const text)
 {
-    auto const bytes = make_const_span(text);
+    auto const bytes = statusbar::make_const_span(text);
     auto const walk = scan(bytes, SIZE_MAX);
     if (walk.bytes != bytes.size()) {
         encoder.fail(Ocp1Error::invalid_utf8);
@@ -170,7 +170,7 @@ void decode(Decoder& decoder, std::string& text)
     decoder.get(count);
     text.clear();
     if (decoder) {
-        text.assign(as_string_view(take_scalars(decoder, count)));
+        text.assign(statusbar::as_string_view(take_scalars(decoder, count)));
     }
 }
 
@@ -210,4 +210,4 @@ void decode(Decoder& decoder, LongBlob& blob)
     blob.bytes.assign(bytes.begin(), bytes.end());
 }
 
-}  // namespace statusbar::ocp1
+}  // namespace padl::ocp1

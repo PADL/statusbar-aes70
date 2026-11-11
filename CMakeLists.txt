@@ -17,7 +17,7 @@ endif()
 # Dependency packages — must be installed and discoverable.
 find_package(statusbar-core REQUIRED)
 
-add_subdirectory(statusbar)
+add_subdirectory(padl)
 
 # Export each module target under the short statusbar::<name> form, so dependent
 # packages find_package() them as statusbar::<module>.
@@ -31,7 +31,7 @@ statusbar_prefix_tool_names()
 # Standalone install/export boilerplate lives in
 # statusbar_package_install_export (cmake/module.cmake); no-op under an outer
 # aggregate build.
-statusbar_package_install_export(NAME aes70)
+statusbar_package_install_export(NAME aes70 INCLUDE_DIR padl)
 
 # ---- packaging (CPack: TGZ + ZIP, plus DEB/RPM on Linux) ----
 if(NOT STATUSBAR_AGGREGATE_BUILD)

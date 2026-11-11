@@ -21,9 +21,9 @@
 /// keep-alives and Notification1 belong to a full OCP.1 connection, which this
 /// is not. Parsed parameters and data are views into the PDU.
 
+#include "padl/ocp1/ocp1_error.hpp"
 #include "statusbar/buffer/buffer.hpp"
 #include "statusbar/ieee/ieee.hpp"
-#include "statusbar/ocp1/ocp1_error.hpp"
 #include "statusbar/status/status.hpp"
 
 #include <cstddef>
@@ -33,11 +33,11 @@
 #include <tuple>
 #include <variant>
 
-namespace statusbar::ocp1 {
+namespace padl::ocp1 {
 
-using ieee::doublet_t;
-using ieee::octet_t;
-using ieee::quadlet_t;
+using statusbar::ieee::doublet_t;
+using statusbar::ieee::octet_t;
+using statusbar::ieee::quadlet_t;
 
 inline constexpr uint8_t SYNC = 0x3B;
 /// The version written; AES70-3 says it is always 1, but some controllers write a
@@ -208,12 +208,13 @@ static_assert(sizeof(Notification2Header) == Notification2Header::LENGTH);
 /// stream: nullopt while the header is incomplete, an error if it is not a PDU
 /// header (invalid_sync) or the PDU would be smaller than its header or larger
 /// than `maximum` (invalid_pdu_size), after which the stream cannot be framed.
-[[nodiscard]] auto pdu_size(std::span<uint8_t const> header, size_t maximum) noexcept -> StatusValue<std::optional<size_t>>;
+[[nodiscard]] auto pdu_size(std::span<uint8_t const> header, size_t maximum) noexcept
+    -> statusbar::StatusValue<std::optional<size_t>>;
 
 /// Parse a whole PDU holding one message. Its parameters or data view `pdu`. A
 /// status code or notification type AES70 does not define, a parameter count its
 /// parameters cannot hold, or a notification with no data is an error.
-[[nodiscard]] auto parse_pdu(std::span<uint8_t const> pdu) noexcept -> StatusValue<Message>;
+[[nodiscard]] auto parse_pdu(std::span<uint8_t const> pdu) noexcept -> statusbar::StatusValue<Message>;
 
 /// The size of `message` as a PDU.
 [[nodiscard]] auto serialized_pdu_size(Message const& message) noexcept -> size_t;
@@ -221,29 +222,29 @@ static_assert(sizeof(Notification2Header) == Notification2Header::LENGTH);
 /// Write `message` into `buffer` as a PDU; its length. The message's parameters
 /// or data must not lie in `buffer` (aliased_parameters): the headers are written
 /// first, over them.
-[[nodiscard]] auto serialize_pdu(Message const& message, std::span<uint8_t> buffer) noexcept -> StatusValue<size_t>;
+[[nodiscard]] auto serialize_pdu(Message const& message, std::span<uint8_t> buffer) noexcept -> statusbar::StatusValue<size_t>;
 
-}  // namespace statusbar::ocp1
+}  // namespace padl::ocp1
 
 // Serialization traits - the headers are packed wire format structs
 template <>
-struct statusbar::traits::is_serializable_wire_fixed_struct<statusbar::ocp1::PduHeader> : std::true_type
+struct statusbar::traits::is_serializable_wire_fixed_struct<padl::ocp1::PduHeader> : std::true_type
 {};
 
 template <>
-struct statusbar::traits::is_serializable_wire_fixed_struct<statusbar::ocp1::CommandHeader> : std::true_type
+struct statusbar::traits::is_serializable_wire_fixed_struct<padl::ocp1::CommandHeader> : std::true_type
 {};
 
 template <>
-struct statusbar::traits::is_serializable_wire_fixed_struct<statusbar::ocp1::ResponseHeader> : std::true_type
+struct statusbar::traits::is_serializable_wire_fixed_struct<padl::ocp1::ResponseHeader> : std::true_type
 {};
 
 template <>
-struct statusbar::traits::is_serializable_wire_fixed_struct<statusbar::ocp1::Notification2Header> : std::true_type
+struct statusbar::traits::is_serializable_wire_fixed_struct<padl::ocp1::Notification2Header> : std::true_type
 {};
 
 // Export using declarations for ADL to find the template functions
-namespace statusbar::ocp1 {
-using protocol::load_unchecked;
-using protocol::store_unchecked;
-}  // namespace statusbar::ocp1
+namespace padl::ocp1 {
+using statusbar::protocol::load_unchecked;
+using statusbar::protocol::store_unchecked;
+}  // namespace padl::ocp1

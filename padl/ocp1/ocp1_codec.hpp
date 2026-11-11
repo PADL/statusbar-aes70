@@ -27,9 +27,9 @@
 /// encoder writes nothing more and a decoder reads nothing more, and `status()`
 /// reports it.
 
+#include "padl/ocp1/ocp1_error.hpp"
 #include "statusbar/buffer/buffer.hpp"
 #include "statusbar/ieee/ieee.hpp"
-#include "statusbar/ocp1/ocp1_error.hpp"
 #include "statusbar/status/status.hpp"
 
 #include <algorithm>
@@ -46,7 +46,7 @@
 #include <utility>
 #include <vector>
 
-namespace statusbar::ocp1 {
+namespace padl::ocp1 {
 
 /// The largest count a string, blob, list or map can carry
 inline constexpr size_t MAX_COUNT = 0xFFFF;
@@ -122,13 +122,13 @@ class Encoder
     }
 
     [[nodiscard]] explicit operator bool() const noexcept { return !error_ && static_cast<bool>(writer_); }
-    [[nodiscard]] auto status() const noexcept -> Status;
+    [[nodiscard]] auto status() const noexcept -> statusbar::Status;
     [[nodiscard]] auto position() const noexcept -> size_t { return writer_.position(); }
     /// What has been written
     [[nodiscard]] auto bytes() const noexcept -> std::span<uint8_t const> { return writer_.get_span(); }
 
     /// For `encode()` overloads: the builder to append wire values to.
-    [[nodiscard]] auto writer() noexcept -> BufferSerializerBuilder& { return writer_; }
+    [[nodiscard]] auto writer() noexcept -> statusbar::BufferSerializerBuilder& { return writer_; }
     /// For `encode()` overloads: fail, if nothing has failed yet.
     void fail(Ocp1Error const error) noexcept
     {
@@ -138,7 +138,7 @@ class Encoder
     }
 
   private:
-    BufferSerializerBuilderWithBuffer writer_;
+    statusbar::BufferSerializerBuilderWithBuffer writer_;
     std::error_code error_{};
 };
 
@@ -162,12 +162,12 @@ class Decoder
     }
 
     [[nodiscard]] explicit operator bool() const noexcept { return !error_ && static_cast<bool>(reader_); }
-    [[nodiscard]] auto status() const noexcept -> Status;
+    [[nodiscard]] auto status() const noexcept -> statusbar::Status;
     [[nodiscard]] auto position() const noexcept -> size_t { return reader_.position(); }
     [[nodiscard]] auto remaining() const noexcept -> size_t { return input_.size() - position(); }
 
     /// For `decode()` overloads: the builder to parse wire values from.
-    [[nodiscard]] auto reader() noexcept -> BufferDeserializerBuilder& { return reader_; }
+    [[nodiscard]] auto reader() noexcept -> statusbar::BufferDeserializerBuilder& { return reader_; }
     /// For `decode()` overloads: the bytes not yet read.
     [[nodiscard]] auto rest() const noexcept -> std::span<uint8_t const> { return input_.subspan(position()); }
     /// For `decode()` overloads: the next `length` bytes, consumed; empty, and the
@@ -183,7 +183,7 @@ class Decoder
 
   private:
     std::span<uint8_t const> input_;
-    BufferDeserializerBuilder reader_;
+    statusbar::BufferDeserializerBuilder reader_;
     std::error_code error_{};
 };
 
@@ -224,7 +224,7 @@ void encode(Encoder& encoder, T const value) noexcept
     } else {
         static_assert(sizeof(T) == 1 || sizeof(T) == 2 || sizeof(T) == 4 || sizeof(T) == 8);
         using U = UnsignedOfSize<T>;
-        encoder.writer().append(ieee::IeeeOrderedUInt<U>{std::bit_cast<U>(value)});
+        encoder.writer().append(statusbar::ieee::IeeeOrderedUInt<U>{std::bit_cast<U>(value)});
     }
 }
 
@@ -241,7 +241,7 @@ void decode(Decoder& decoder, T& value) noexcept
         value = raw != 0;
     } else {
         using U = UnsignedOfSize<T>;
-        ieee::IeeeOrderedUInt<U> wire{};
+        statusbar::ieee::IeeeOrderedUInt<U> wire{};
         decoder.reader().parse(&wire);
         value = std::bit_cast<T>(wire.get());
     }
@@ -336,30 +336,30 @@ void decode(Decoder& decoder, T& record)
 
 /// Write `values` one after another into `buffer`; the number of bytes written.
 template <typename... T>
-[[nodiscard]] auto encode_values(std::span<uint8_t> const buffer, T const&... values) -> StatusValue<size_t>
+[[nodiscard]] auto encode_values(std::span<uint8_t> const buffer, T const&... values) -> statusbar::StatusValue<size_t>
 {
     Encoder encoder{buffer};
     (encoder.put(values), ...);
     if (auto const status = encoder.status(); !status) {
-        return failure(status.error());
+        return statusbar::failure(status.error());
     }
     return encoder.position();
 }
 
 /// Read a `T` that is the whole of `input`: trailing bytes are an error.
 template <typename T>
-[[nodiscard]] auto decode_value(std::span<uint8_t const> const input) -> StatusValue<T>
+[[nodiscard]] auto decode_value(std::span<uint8_t const> const input) -> statusbar::StatusValue<T>
 {
     Decoder decoder{input};
     T value{};
     decoder.get(value);
     if (auto const status = decoder.status(); !status) {
-        return failure(status.error());
+        return statusbar::failure(status.error());
     }
     if (decoder.remaining() != 0) {
-        return failure(Ocp1Error::trailing_data);
+        return statusbar::failure(Ocp1Error::trailing_data);
     }
     return value;
 }
 
-}  // namespace statusbar::ocp1
+}  // namespace padl::ocp1

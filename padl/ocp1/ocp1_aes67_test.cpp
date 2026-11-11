@@ -1,7 +1,7 @@
 // Copyright 2026 PADL Software Pty Ltd
 // SPDX-License-Identifier: MIT
 
-#include "statusbar/ocp1/ocp1_aes67.hpp"
+#include "padl/ocp1/ocp1_aes67.hpp"
 
 #include "statusbar/test/test.hpp"
 
@@ -11,7 +11,7 @@
 #include <vector>
 
 using namespace statusbar;
-using namespace statusbar::ocp1;
+using namespace padl::ocp1;
 
 namespace {
 
@@ -110,4 +110,4 @@ TEST(ocp1_aes67, a_record_past_a_blob_is_too_long)
     EXPECT_EQ(blob.error(), make_error_code(Ocp1Error::too_long));
 }
 
-TEST_MAIN(statusbar_ocp1, ocp1_aes67_test)
+TEST_MAIN(padl_ocp1, ocp1_aes67_test)

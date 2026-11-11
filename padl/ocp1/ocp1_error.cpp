@@ -1,12 +1,12 @@
 // Copyright 2026 PADL Software Pty Ltd
 // SPDX-License-Identifier: MIT
 
-#include "statusbar/ocp1/ocp1_error.hpp"
+#include "padl/ocp1/ocp1_error.hpp"
 
 #include <string>
 #include <system_error>
 
-namespace statusbar::ocp1 {
+namespace padl::ocp1 {
 
 auto Ocp1ErrorCategory::message(int ev) const -> std::string
 {
@@ -52,4 +52,4 @@ auto make_error_code(Ocp1Error e) noexcept -> std::error_code
     return {static_cast<int>(e), ocp1_error_category()};
 }
 
-}  // namespace statusbar::ocp1
+}  // namespace padl::ocp1

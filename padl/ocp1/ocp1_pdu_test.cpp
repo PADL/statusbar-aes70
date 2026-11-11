@@ -1,10 +1,10 @@
 // Copyright 2026 PADL Software Pty Ltd
 // SPDX-License-Identifier: MIT
 
-#include "statusbar/ocp1/ocp1_pdu.hpp"
+#include "padl/ocp1/ocp1_pdu.hpp"
 
+#include "padl/ocp1/ocp1_codec.hpp"
 #include "statusbar/buffer/buffer_error.hpp"
-#include "statusbar/ocp1/ocp1_codec.hpp"
 #include "statusbar/test/test.hpp"
 
 #include <array>
@@ -16,7 +16,7 @@
 #include <vector>
 
 using namespace statusbar;
-using namespace statusbar::ocp1;
+using namespace padl::ocp1;
 
 namespace {
 
@@ -233,4 +233,4 @@ TEST(ocp1_pdu, ids_are_records)
     EXPECT_TRUE(decode_value<MethodId>(std::span{buffer}.first(4)).value_or(MethodId{}) == (MethodId{0, 4096}));
 }
 
-TEST_MAIN(statusbar_ocp1, ocp1_pdu_test)
+TEST_MAIN(padl_ocp1, ocp1_pdu_test)

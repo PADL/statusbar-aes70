@@ -8,7 +8,7 @@
 #include <string>
 #include <system_error>
 
-namespace statusbar::ocp1 {
+namespace padl::ocp1 {
 
 /// OCP.1 encoding and framing error codes. A value that runs past the end of its
 /// buffer, or does not fit in the one being written, is a statusbar BufferError.
@@ -33,7 +33,7 @@ enum class Ocp1Error
 class Ocp1ErrorCategory : public std::error_category
 {
   public:
-    [[nodiscard]] auto name() const noexcept -> char const* override { return "statusbar.ocp1"; }
+    [[nodiscard]] auto name() const noexcept -> char const* override { return "padl.ocp1"; }
 
     [[nodiscard]] auto message(int ev) const -> std::string override;
 };
@@ -45,8 +45,8 @@ class Ocp1ErrorCategory : public std::error_category
 /// @param e The OCP.1 error code to convert
 [[nodiscard]] auto make_error_code(Ocp1Error e) noexcept -> std::error_code;
 
-}  // namespace statusbar::ocp1
+}  // namespace padl::ocp1
 
 template <>
-struct std::is_error_code_enum<statusbar::ocp1::Ocp1Error> : std::true_type
+struct std::is_error_code_enum<padl::ocp1::Ocp1Error> : std::true_type
 {};

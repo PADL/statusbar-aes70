@@ -1,7 +1,7 @@
 // Copyright 2026 PADL Software Pty Ltd
 // SPDX-License-Identifier: MIT
 
-#include "statusbar/ocp1/ocp1_codec.hpp"
+#include "padl/ocp1/ocp1_codec.hpp"
 
 #include "statusbar/buffer/buffer_error.hpp"
 #include "statusbar/test/test.hpp"
@@ -14,7 +14,7 @@
 #include <vector>
 
 using namespace statusbar;
-using namespace statusbar::ocp1;
+using namespace padl::ocp1;
 
 namespace {
 
@@ -288,4 +288,4 @@ TEST(ocp1_codec, errors_are_sticky)
     EXPECT_EQ(result.error(), make_error_code(Ocp1Error::too_long));
 }
 
-TEST_MAIN(statusbar_ocp1, ocp1_codec_test)
+TEST_MAIN(padl_ocp1, ocp1_codec_test)

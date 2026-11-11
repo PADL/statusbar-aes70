@@ -6,7 +6,7 @@
 /// The AES70-21 AES67 adaptation records an OcaMediaStreamEndpoint's AdaptationData holds,
 /// as OCP.1 values: Aes67EndpointIPParameters, Aes67MediaIDType and Aes67EndpointAdaptationData.
 
-#include "statusbar/ocp1/ocp1_codec.hpp"
+#include "padl/ocp1/ocp1_codec.hpp"
 
 #include <cstdint>
 #include <span>
@@ -14,7 +14,7 @@
 #include <tuple>
 #include <vector>
 
-namespace statusbar::ocp1 {
+namespace padl::ocp1 {
 
 /// Aes67StreamTransmissionCapabilities (AES70-21), bits of Aes67EndpointAdaptationData.TransmissionCapabilities.
 inline constexpr uint16_t AES67_UNICAST_CAPABLE = 1U << 0U;
@@ -100,9 +100,9 @@ struct Aes67EndpointAdaptationData
 };
 
 /// `data` as an AdaptationData blob; too_long when it does not fit one (65535 bytes).
-[[nodiscard]] auto encode_adaptation_data(Aes67EndpointAdaptationData const& data) -> StatusValue<Blob>;
+[[nodiscard]] auto encode_adaptation_data(Aes67EndpointAdaptationData const& data) -> statusbar::StatusValue<Blob>;
 
 /// The record a whole AdaptationData blob's `bytes` hold; trailing bytes are an error.
-[[nodiscard]] auto decode_adaptation_data(std::span<uint8_t const> bytes) -> StatusValue<Aes67EndpointAdaptationData>;
+[[nodiscard]] auto decode_adaptation_data(std::span<uint8_t const> bytes) -> statusbar::StatusValue<Aes67EndpointAdaptationData>;
 
-}  // namespace statusbar::ocp1
+}  // namespace padl::ocp1
