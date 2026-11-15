@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <utility>
 #include <variant>
 
 namespace padl::ocp1 {
@@ -289,6 +290,31 @@ auto pdu_size(std::span<uint8_t const> const header, size_t const maximum) noexc
         return statusbar::failure(Ocp1Error::invalid_pdu_size);
     }
     return size;
+}
+
+auto next_pdu(std::span<uint8_t const> const bytes, size_t const maximum) noexcept
+    -> statusbar::StatusValue<std::span<uint8_t const>>
+{
+    auto const size = pdu_size(bytes, maximum);
+    if (!size) {
+        return statusbar::forward_failure(size);
+    }
+    if (!*size || bytes.size() < **size) {
+        return std::span<uint8_t const>{};
+    }
+    return bytes.first(**size);
+}
+
+auto command_handle(std::span<uint8_t const> const pdu) noexcept -> std::optional<uint32_t>
+{
+    PduHeader header{};
+    CommandHeader command{};
+    statusbar::BufferDeserializerBuilder reader{pdu};
+    reader.parse(&header).parse(&command);
+    if (!reader || header.sync != SYNC || header.message_type != std::to_underlying(MessageType::command_response_required)) {
+        return std::nullopt;
+    }
+    return command.handle.get();
 }
 
 auto parse_pdu(std::span<uint8_t const> const pdu) noexcept -> statusbar::StatusValue<Message>

@@ -13,6 +13,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -144,6 +145,38 @@ TEST(ocp1_pdu, frames_a_stream_by_its_headers)
     auto const not_a_pdu = pdu_size(std::span{bad_sync}.first(1), 1 << 20);
     EXPECT_FALSE(not_a_pdu.has_value());
     EXPECT_EQ(not_a_pdu.error(), make_error_code(Ocp1Error::invalid_sync));
+}
+
+TEST(ocp1_pdu, next_pdu_is_empty_until_the_whole_pdu_has_arrived)
+{
+    auto stream = from_hex(EVENT);
+    auto const refusal = from_hex(REFUSAL);
+    stream.insert(stream.end(), refusal.begin(), refusal.end());
+    auto const first = next_pdu(stream, 1 << 20);
+    EXPECT_TRUE(first.has_value());
+    EXPECT_EQ(bytes(first.value_or(std::span<uint8_t const>{})), from_hex(EVENT));
+
+    auto const partial = next_pdu(std::span{refusal}.first(refusal.size() - 1), 1 << 20);
+    EXPECT_TRUE(partial.has_value() && partial->empty());
+    EXPECT_TRUE(next_pdu({}, 1 << 20).has_value());
+
+    auto const too_large = next_pdu(refusal, refusal.size() - 1);
+    EXPECT_FALSE(too_large.has_value());
+    EXPECT_EQ(too_large.error(), make_error_code(Ocp1Error::invalid_pdu_size));
+}
+
+TEST(ocp1_pdu, a_malformed_command_wanting_a_response_still_has_its_handle)
+{
+    auto command = from_hex(COMMAND);
+    command[26] = 0x01;  // one parameter claimed, none there
+    EXPECT_FALSE(parse_pdu(command).has_value());
+    EXPECT_EQ(command_handle(command).value_or(0), uint32_t{1});
+
+    command[7] = std::to_underlying(MessageType::command);  // no response wanted
+    EXPECT_FALSE(command_handle(command).has_value());
+    EXPECT_FALSE(command_handle(from_hex(REFUSAL)).has_value());
+    auto const whole = from_hex(COMMAND);
+    EXPECT_FALSE(command_handle(std::span{whole}.first(PduHeader::LENGTH + 4)).has_value());
 }
 
 TEST(ocp1_pdu, refuses_malformed_pdus)

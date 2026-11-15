@@ -239,6 +239,16 @@ static_assert(offsetof(Notification2Header, notification_type) == 12);
 [[nodiscard]] auto pdu_size(std::span<uint8_t const> header, size_t maximum) noexcept
     -> statusbar::StatusValue<std::optional<size_t>>;
 
+/// The whole PDU at the front of `bytes`: empty until all of it has arrived, pdu_size()'s
+/// error if the stream cannot be framed. The PDU views `bytes`.
+[[nodiscard]] auto next_pdu(std::span<uint8_t const> bytes, size_t maximum) noexcept
+    -> statusbar::StatusValue<std::span<uint8_t const>>;
+
+/// The handle of the command `pdu` holds, when it wants a response and its PDU and command
+/// headers read though the rest may not parse; nullopt otherwise. A device answers such a
+/// command with bad_format rather than leave its controller waiting.
+[[nodiscard]] auto command_handle(std::span<uint8_t const> pdu) noexcept -> std::optional<uint32_t>;
+
 /// Parse a whole PDU holding one message. Its parameters or data view `pdu`. A
 /// status code or notification type AES70 does not define, a parameter count its
 /// parameters cannot hold, or a notification with no data is an error.
