@@ -3,11 +3,14 @@
 
 #include "padl/ocp1/ocp1_pdu.hpp"
 
+#include "statusbar/buffer/buffer_error.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <optional>
 #include <span>
+#include <system_error>
 #include <utility>
 #include <variant>
 
@@ -276,6 +279,18 @@ void append_pdu(statusbar::BufferSerializerBuilderWithBuffer& writer, Message co
 }
 
 }  // namespace
+
+auto status_for(std::error_code const& error) noexcept -> OcaStatus
+{
+    if (error == Ocp1Error::unsupported_version) {
+        return OcaStatus::protocol_version_error;
+    }
+    if (error == Ocp1Error::too_long || error == statusbar::BufferError::insufficient_space) {
+        return OcaStatus::buffer_overflow;
+    }
+    bool const unreadable = error.category() == ocp1_error_category() && error != Ocp1Error::aliased_parameters;
+    return unreadable || error == statusbar::BufferError::insufficient_data ? OcaStatus::bad_format : OcaStatus::device_error;
+}
 
 auto pdu_size(std::span<uint8_t const> const header, size_t const maximum) noexcept -> statusbar::StatusValue<std::optional<size_t>>
 {

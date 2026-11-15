@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <system_error>
 #include <tuple>
 #include <variant>
 
@@ -70,6 +71,11 @@ enum class NotificationType : uint8_t
     event = 0,
     exception,
 };
+
+/// The status answering a command that failed with `error`: bad_format for an OCP.1 or buffer
+/// error reading it, protocol_version_error, buffer_overflow for an answer too long for its count
+/// or buffer, device_error for any other error.
+[[nodiscard]] auto status_for(std::error_code const& error) noexcept -> OcaStatus;
 
 //
 // Identifiers - AES70-2 OcaMethodID, OcaEventID, OcaEvent

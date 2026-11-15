@@ -13,6 +13,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -260,6 +261,18 @@ TEST(ocp1_pdu, refuses_to_write_over_its_own_parameters)
     auto const bad = serialize_pdu(miscounted, other);
     EXPECT_FALSE(bad.has_value());
     EXPECT_EQ(bad.error(), make_error_code(Ocp1Error::invalid_parameter_count));
+}
+
+TEST(ocp1_pdu, a_failure_answers_with_the_status_aes70_gives_it)
+{
+    EXPECT_TRUE(status_for(make_error_code(Ocp1Error::invalid_utf8)) == OcaStatus::bad_format);
+    EXPECT_TRUE(status_for(make_error_code(Ocp1Error::trailing_data)) == OcaStatus::bad_format);
+    EXPECT_TRUE(status_for(make_error_code(statusbar::BufferError::insufficient_data)) == OcaStatus::bad_format);
+    EXPECT_TRUE(status_for(make_error_code(Ocp1Error::unsupported_version)) == OcaStatus::protocol_version_error);
+    EXPECT_TRUE(status_for(make_error_code(Ocp1Error::too_long)) == OcaStatus::buffer_overflow);
+    EXPECT_TRUE(status_for(make_error_code(statusbar::BufferError::insufficient_space)) == OcaStatus::buffer_overflow);
+    EXPECT_TRUE(status_for(make_error_code(Ocp1Error::aliased_parameters)) == OcaStatus::device_error);
+    EXPECT_TRUE(status_for(std::make_error_code(std::errc::io_error)) == OcaStatus::device_error);
 }
 
 TEST(ocp1_pdu, ids_are_records)

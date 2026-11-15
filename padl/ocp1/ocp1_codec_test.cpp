@@ -11,6 +11,7 @@
 #include <span>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 using namespace padl::ocp1;
@@ -188,6 +189,21 @@ TEST(ocp1_codec, writes_blobs_lists_and_maps_with_counts)
     EXPECT_EQ(encoded(LongBlob{{1, 2}}), (std::vector<uint8_t>{0x00, 0x00, 0x00, 0x02, 1, 2}));
     auto const long_blob = decode_value<LongBlob>(encoded(LongBlob{{1, 2}}));
     EXPECT_TRUE(long_blob.value_or(LongBlob{}) == (LongBlob{{1, 2}}));
+}
+
+TEST(ocp1_codec, tuples_and_pairs_are_records)
+{
+    // a method's parameters: an OcaUint32 then an OcaString
+    std::tuple<uint32_t, std::string> const parameters{1001, "Stage"};
+    EXPECT_EQ(encoded(parameters), encoded(uint32_t{1001}, std::string{"Stage"}));
+    auto const back = decode_value<std::tuple<uint32_t, std::string>>(encoded(parameters));
+    EXPECT_TRUE(back.value_or(std::tuple<uint32_t, std::string>{}) == parameters);
+    EXPECT_TRUE(encoded(std::tuple<>{}).empty());
+
+    std::pair<uint16_t, PortId> const entry{3, {.mode = 2, .index = 7}};
+    EXPECT_EQ(encoded(entry), (std::vector<uint8_t>{0x00, 0x03, 0x02, 0x00, 0x07}));
+    auto const pair = decode_value<std::pair<uint16_t, PortId>>(encoded(entry));
+    EXPECT_TRUE(pair.value_or(std::pair<uint16_t, PortId>{}) == entry);
 }
 
 TEST(ocp1_codec, writes_an_interval_with_its_bounds)

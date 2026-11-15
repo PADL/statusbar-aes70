@@ -296,29 +296,14 @@ void decode(Decoder& decoder, std::vector<T>& list)
 template <typename K, typename V>
 void encode(Encoder& encoder, Map<K, V> const& map)
 {
-    if (map.entries.size() > MAX_COUNT) {
-        encoder.fail(Ocp1Error::too_long);
-        return;
-    }
-    encoder.put(static_cast<uint16_t>(map.entries.size()));
-    for (auto const& [key, value] : map.entries) {
-        encoder.put(key).put(value);
-    }
+    encode(encoder, map.entries);
 }
 
 /// Read an OcaMap or OcaMultiMap, in wire order.
 template <typename K, typename V>
 void decode(Decoder& decoder, Map<K, V>& map)
 {
-    uint16_t count{};
-    decoder.get(count);
-    map.entries.clear();
-    map.entries.reserve(std::min<size_t>(count, decoder.remaining()));
-    for (uint16_t i = 0; i < count && decoder; ++i) {
-        std::pair<K, V> entry{};
-        decoder.get(entry.first).get(entry.second);
-        map.entries.push_back(std::move(entry));
-    }
+    decode(decoder, map.entries);
 }
 
 //
@@ -337,6 +322,34 @@ template <Record T>
 void decode(Decoder& decoder, T& record)
 {
     std::apply([&decoder](auto&... field) { (decoder.get(field), ...); }, record.fields());
+}
+
+/// Write a std::tuple as a record: its elements in order, as a method's parameters are.
+template <typename... T>
+void encode(Encoder& encoder, std::tuple<T...> const& values)
+{
+    std::apply([&encoder](auto const&... value) { (encoder.put(value), ...); }, values);
+}
+
+/// Read a std::tuple as a record.
+template <typename... T>
+void decode(Decoder& decoder, std::tuple<T...>& values)
+{
+    std::apply([&decoder](auto&... value) { (decoder.get(value), ...); }, values);
+}
+
+/// Write a std::pair as a record: first, then second.
+template <typename A, typename B>
+void encode(Encoder& encoder, std::pair<A, B> const& pair)
+{
+    encoder.put(pair.first).put(pair.second);
+}
+
+/// Read a std::pair as a record.
+template <typename A, typename B>
+void decode(Decoder& decoder, std::pair<A, B>& pair)
+{
+    decoder.get(pair.first).get(pair.second);
 }
 
 //
