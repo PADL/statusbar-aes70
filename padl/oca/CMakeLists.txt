@@ -13,3 +13,6 @@ statusbar_add_module(
   TESTS
   oca_aes67_test.cpp
   oca_types_test.cpp)
+
+# Fuzz harnesses (built only when -DENABLE_FUZZING=ON).
+add_aes70_fuzzer(${CMAKE_CURRENT_LIST_DIR}/oca_aes67_fuzzer.cpp)

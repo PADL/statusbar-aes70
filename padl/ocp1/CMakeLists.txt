@@ -15,3 +15,7 @@ statusbar_add_module(
   TESTS
   ocp1_codec_test.cpp
   ocp1_pdu_test.cpp)
+
+# Fuzz harnesses (built only when -DENABLE_FUZZING=ON).
+add_aes70_fuzzer(${CMAKE_CURRENT_LIST_DIR}/ocp1_codec_fuzzer.cpp)
+add_aes70_fuzzer(${CMAKE_CURRENT_LIST_DIR}/ocp1_pdu_fuzzer.cpp)
