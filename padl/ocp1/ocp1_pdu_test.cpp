@@ -6,6 +6,7 @@
 #include "padl/ocp1/ocp1_codec.hpp"
 #include "statusbar/buffer/buffer_error.hpp"
 #include "statusbar/test/test.hpp"
+#include "statusbar/test/test_util.hpp"
 
 #include <array>
 #include <cstdint>
@@ -15,7 +16,6 @@
 #include <variant>
 #include <vector>
 
-using namespace statusbar;
 using namespace padl::ocp1;
 
 namespace {
@@ -23,16 +23,6 @@ namespace {
 auto bytes(std::span<uint8_t const> s) -> std::vector<uint8_t>
 {
     return {s.begin(), s.end()};
-}
-
-auto from_hex(std::string_view const hex) -> std::vector<uint8_t>
-{
-    auto const nibble = [](char const c) -> uint8_t { return static_cast<uint8_t>(c <= '9' ? c - '0' : c - 'a' + 10); };
-    std::vector<uint8_t> out;
-    for (size_t i = 0; i + 1 < hex.size(); i += 2) {
-        out.push_back(static_cast<uint8_t>((nibble(hex[i]) << 4U) | nibble(hex[i + 1])));
-    }
-    return out;
 }
 
 auto serialized(Message const& message) -> std::vector<uint8_t>
@@ -43,18 +33,29 @@ auto serialized(Message const& message) -> std::vector<uint8_t>
     return {buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(length.value_or(0))};
 }
 
-// PDUs as SwiftOCA writes them (InfernoAES70's MediaBridgeWire.txt): a command with
-// no parameters to ONo 4096 method {1, 1}, handle 1; a refusal (parameterOutOfRange)
-// of handle 7; an event {1, 4} from ONo 4096 carrying the OcaUint32 1001
-constexpr std::string_view COMMAND = "3b00010000001a0100010000001100000001000010000001000100";
-constexpr std::string_view REFUSAL = "3b0001000000130300010000000a000000070700";
-constexpr std::string_view EVENT = "3b00010000001a05000100000011000010000001000400000003e9";
+// AES70-3 PDUs, as SwiftOCA writes them: a command with no parameters to ONo 4096 method
+// {1, 1}, handle 1; a refusal (parameterOutOfRange) of handle 7; an event {1, 4} from
+// ONo 4096 carrying the OcaUint32 1001
+constexpr char COMMAND[] = "3b00010000001a0100010000001100000001000010000001000100";
+constexpr char REFUSAL[] = "3b0001000000130300010000000a000000070700";
+constexpr char EVENT[] = "3b00010000001a05000100000011000010000001000400000003e9";
+// an event with no data, and a PDU too short for its response header
+constexpr char EMPTY_EVENT[] = "3b0001000000160500010000000d000010000001000400";
+constexpr char SHORT_RESPONSE[] = "3b0001000000100300010000000a000000";
+
+/// The bytes `hex` spells, two hex digits a byte
+template <size_t L>
+auto from_hex(char const (&hex)[L]) -> std::vector<uint8_t>
+{
+    auto const array = hex_to_bytes<(L - 1) / 2>(hex);
+    return {array.begin(), array.end()};
+}
 
 }  // namespace
 
 TEST(ocp1_pdu, writes_a_command_as_swiftoca_does)
 {
-    Command const command{.handle = 1, .target = 4096, .method = {1, 1}};
+    Command const command{.handle = 1, .target = 4096, .method = {.def_level = 1, .index = 1}};
     EXPECT_EQ(serialized(command), from_hex(COMMAND));
     EXPECT_EQ(serialized_pdu_size(command), from_hex(COMMAND).size());
 }
@@ -65,7 +66,8 @@ TEST(ocp1_pdu, writes_a_refusal_and_an_event_as_swiftoca_does)
 
     std::array<uint8_t, 4> data{};
     EXPECT_TRUE(encode_values(data, uint32_t{1001}).has_value());
-    EXPECT_EQ(serialized(Notification{.event = {4096, {1, 4}}, .data = data}), from_hex(EVENT));
+    EXPECT_EQ(
+        serialized(Notification{.event = {.emitter = 4096, .id = {.def_level = 1, .index = 4}}, .data = data}), from_hex(EVENT));
 }
 
 TEST(ocp1_pdu, parses_what_swiftoca_writes)
@@ -104,7 +106,7 @@ TEST(ocp1_pdu, round_trips_parameters_and_a_command_wanting_no_response)
     Command const command{
         .handle = 9,
         .target = 4096,
-        .method = {1, 14},
+        .method = {.def_level = 1, .index = 14},
         .parameters = {.count = 2, .data = std::span{parameters}.first(length.value_or(0))},
         .response_required = false,
     };
@@ -171,26 +173,26 @@ TEST(ocp1_pdu, refuses_malformed_pdus)
     EXPECT_FALSE(bad_type.has_value());
     EXPECT_EQ(bad_type.error(), make_error_code(Ocp1Error::invalid_notification_type));
 
-    // a higher protocol version is accepted, as SwiftOCA accepts it: some controllers write one
+    // any protocol version from 1 is accepted
     auto newer = good;
     newer[2] = 0x07;
     EXPECT_TRUE(parse_pdu(newer).has_value());
 
-    // a notification with no data: SwiftOCA refuses one, so it is never written or read
-    auto const empty_event = from_hex("3b0001000000160500010000000d000010000001000400");
+    // a Notification2 always has data: one without is neither read nor written
+    auto const empty_event = from_hex(EMPTY_EVENT);
     auto const no_data = parse_pdu(empty_event);
     EXPECT_FALSE(no_data.has_value());
     EXPECT_EQ(no_data.error(), make_error_code(Ocp1Error::invalid_message_size));
     std::array<uint8_t, 64> out{};
-    auto const unwritten = serialize_pdu(Notification{.event = {4096, {1, 4}}}, out);
+    auto const unwritten = serialize_pdu(Notification{.event = {.emitter = 4096, .id = {.def_level = 1, .index = 4}}}, out);
     EXPECT_FALSE(unwritten.has_value());
     EXPECT_EQ(unwritten.error(), make_error_code(Ocp1Error::invalid_message_size));
 
     // a PDU whose header claims the bytes it has, but too few for its message header
-    auto const short_pdu = from_hex("3b0001000000100300010000000a000000");
+    auto const short_pdu = from_hex(SHORT_RESPONSE);
     auto const result = parse_pdu(short_pdu);
     EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(result.error(), make_error_code(BufferError::insufficient_data));
+    EXPECT_EQ(result.error(), make_error_code(statusbar::BufferError::insufficient_data));
 }
 
 TEST(ocp1_pdu, a_buffer_too_small_is_an_error)
@@ -198,7 +200,7 @@ TEST(ocp1_pdu, a_buffer_too_small_is_an_error)
     std::array<uint8_t, 12> buffer{};
     auto const result = serialize_pdu(Response{.handle = 1}, buffer);
     EXPECT_FALSE(result.has_value());
-    EXPECT_EQ(result.error(), make_error_code(BufferError::insufficient_space));
+    EXPECT_EQ(result.error(), make_error_code(statusbar::BufferError::insufficient_space));
 }
 
 TEST(ocp1_pdu, refuses_to_write_over_its_own_parameters)
@@ -207,7 +209,10 @@ TEST(ocp1_pdu, refuses_to_write_over_its_own_parameters)
     auto const length = encode_values(buffer, uint32_t{7});
     EXPECT_TRUE(length.has_value());
     Command const command{
-        .handle = 1, .target = 4096, .method = {1, 7}, .parameters = {.count = 1, .data = std::span{buffer}.first(4)}};
+        .handle = 1,
+        .target = 4096,
+        .method = {.def_level = 1, .index = 7},
+        .parameters = {.count = 1, .data = std::span{buffer}.first(4)}};
     auto const result = serialize_pdu(command, buffer);
     EXPECT_FALSE(result.has_value());
     EXPECT_EQ(result.error(), make_error_code(Ocp1Error::aliased_parameters));
@@ -217,7 +222,8 @@ TEST(ocp1_pdu, refuses_to_write_over_its_own_parameters)
     EXPECT_TRUE(serialize_pdu(command, other).has_value());
 
     // a count the parameters cannot hold is refused before anything is written
-    Command const miscounted{.handle = 1, .target = 4096, .method = {1, 7}, .parameters = {.count = 2, .data = {}}};
+    Command const miscounted{
+        .handle = 1, .target = 4096, .method = {.def_level = 1, .index = 7}, .parameters = {.count = 2, .data = {}}};
     auto const bad = serialize_pdu(miscounted, other);
     EXPECT_FALSE(bad.has_value());
     EXPECT_EQ(bad.error(), make_error_code(Ocp1Error::invalid_parameter_count));
@@ -225,7 +231,7 @@ TEST(ocp1_pdu, refuses_to_write_over_its_own_parameters)
 
 TEST(ocp1_pdu, ids_are_records)
 {
-    // OcaEvent as a parameter (AddSubscription2 takes one): emitter, then the id
+    // OcaEvent as a parameter (AddSubscription2 has one): emitter, then the id
     std::array<uint8_t, 8> buffer{};
     EXPECT_TRUE(encode_values(buffer, Event{4096, {1, 4}}).has_value());
     EXPECT_EQ(bytes(buffer), (std::vector<uint8_t>{0x00, 0x00, 0x10, 0x00, 0x00, 0x01, 0x00, 0x04}));

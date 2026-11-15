@@ -25,44 +25,46 @@ auto valid(Parameters const& parameters) noexcept -> bool
     return parameters.count == 0 ? parameters.data.empty() : parameters.count <= parameters.data.size();
 }
 
-/// What framing a message needs: its PDU type, its size (header and payload), its
-/// payload, and whether its count and payload agree
+/// What framing a message needs: its PDU type, its size (header and payload) and its payload
 struct Framing
 {
     MessageType type;
     size_t size;
     std::span<uint8_t const> payload;
-    bool valid;
 };
 
-auto framing(Message const& message) noexcept -> Framing
+/// A command's or response's framing; invalid_parameter_count if its count and parameters disagree
+[[nodiscard]] auto framing_for(MessageType const type, size_t const header, Parameters const& parameters) noexcept
+    -> statusbar::StatusValue<Framing>
+{
+    if (!valid(parameters)) {
+        return statusbar::failure(Ocp1Error::invalid_parameter_count);
+    }
+    return Framing{.type = type, .size = header + parameters.data.size(), .payload = parameters.data};
+}
+
+/// A notification's framing; invalid_message_size if it has no data
+[[nodiscard]] auto framing_for(Notification const& notification) noexcept -> statusbar::StatusValue<Framing>
+{
+    if (notification.data.empty()) {
+        return statusbar::failure(Ocp1Error::invalid_message_size);
+    }
+    return Framing{
+        .type = MessageType::notification2,
+        .size = Notification2Header::LENGTH + notification.data.size(),
+        .payload = notification.data};
+}
+
+[[nodiscard]] auto framing(Message const& message) noexcept -> statusbar::StatusValue<Framing>
 {
     return std::visit(
         Overloaded{
-            [](Command const& command) {
-                return Framing{
-                    .type = command.response_required ? MessageType::command_response_required : MessageType::command,
-                    .size = CommandHeader::LENGTH + command.parameters.data.size(),
-                    .payload = command.parameters.data,
-                    .valid = valid(command.parameters),
-                };
+            [](Command const& c) {
+                auto const type = c.response_required ? MessageType::command_response_required : MessageType::command;
+                return framing_for(type, CommandHeader::LENGTH, c.parameters);
             },
-            [](Response const& response) {
-                return Framing{
-                    .type = MessageType::response,
-                    .size = ResponseHeader::LENGTH + response.parameters.data.size(),
-                    .payload = response.parameters.data,
-                    .valid = valid(response.parameters),
-                };
-            },
-            [](Notification const& notification) {
-                return Framing{
-                    .type = MessageType::notification2,
-                    .size = Notification2Header::LENGTH + notification.data.size(),
-                    .payload = notification.data,
-                    .valid = !notification.data.empty(),
-                };
-            },
+            [](Response const& r) { return framing_for(MessageType::response, ResponseHeader::LENGTH, r.parameters); },
+            [](Notification const& n) { return framing_for(n); },
         },
         message);
 }
@@ -104,9 +106,9 @@ auto check_header(PduHeader const& header, size_t const size) noexcept -> status
     return statusbar::success();
 }
 
-/// A message's fixed header, read from `reader`, whose own size field (`size_of`) must be the body's
-template <class Header, class SizeOf>
-auto fixed_header(statusbar::BufferDeserializerBuilder& reader, std::span<uint8_t const> const body, SizeOf const size_of) noexcept
+/// A message's fixed header, read from `reader`, whose own size field must be the body's
+template <class Header>
+auto fixed_header(statusbar::BufferDeserializerBuilder& reader, std::span<uint8_t const> const body) noexcept
     -> statusbar::StatusValue<Header>
 {
     Header fixed{};
@@ -114,7 +116,7 @@ auto fixed_header(statusbar::BufferDeserializerBuilder& reader, std::span<uint8_
     if (!reader) {
         return statusbar::failure(reader.error());
     }
-    if (size_of(fixed) != body.size()) {
+    if (fixed.size != body.size()) {
         return statusbar::failure(Ocp1Error::invalid_message_size);
     }
     return fixed;
@@ -135,7 +137,7 @@ auto parse_command(
     statusbar::BufferDeserializerBuilder& reader, std::span<uint8_t const> const body, bool const response_required) noexcept
     -> statusbar::StatusValue<Message>
 {
-    auto const command = fixed_header<CommandHeader>(reader, body, [](CommandHeader const& h) { return h.command_size; });
+    auto const command = fixed_header<CommandHeader>(reader, body);
     if (!command) {
         return statusbar::forward_failure(command);
     }
@@ -155,7 +157,7 @@ auto parse_command(
 auto parse_response(statusbar::BufferDeserializerBuilder& reader, std::span<uint8_t const> const body) noexcept
     -> statusbar::StatusValue<Message>
 {
-    auto const response = fixed_header<ResponseHeader>(reader, body, [](ResponseHeader const& h) { return h.response_size; });
+    auto const response = fixed_header<ResponseHeader>(reader, body);
     if (!response) {
         return statusbar::forward_failure(response);
     }
@@ -173,8 +175,7 @@ auto parse_response(statusbar::BufferDeserializerBuilder& reader, std::span<uint
 auto parse_notification(statusbar::BufferDeserializerBuilder& reader, std::span<uint8_t const> const body) noexcept
     -> statusbar::StatusValue<Message>
 {
-    auto const notification =
-        fixed_header<Notification2Header>(reader, body, [](Notification2Header const& h) { return h.notification_size; });
+    auto const notification = fixed_header<Notification2Header>(reader, body);
     if (!notification) {
         return statusbar::forward_failure(notification);
     }
@@ -213,20 +214,18 @@ auto parse_message(
     return statusbar::failure(Ocp1Error::unsupported_message_type);
 }
 
-/// Whether `message` can be framed into `buffer`: its size, aliasing and count checks
-auto check_framing(Message const& message, Framing const& framing, std::span<uint8_t> const buffer) noexcept -> statusbar::Status
+/// The framing of `message`, if it can be written into `buffer`: its count, size and aliasing checks
+[[nodiscard]] auto checked_framing(Message const& message, std::span<uint8_t> const buffer) noexcept
+    -> statusbar::StatusValue<Framing>
 {
-    if (PduHeader::LENGTH - 1 + framing.size > UINT32_MAX) {
+    auto const framed = framing(message);
+    if (framed && PduHeader::LENGTH - 1 + framed->size > UINT32_MAX) {
         return statusbar::failure(Ocp1Error::invalid_pdu_size);
     }
-    if (overlaps(framing.payload, buffer)) {
+    if (framed && overlaps(framed->payload, buffer)) {
         return statusbar::failure(Ocp1Error::aliased_parameters);
     }
-    if (!framing.valid) {
-        return statusbar::failure(
-            std::holds_alternative<Notification>(message) ? Ocp1Error::invalid_message_size : Ocp1Error::invalid_parameter_count);
-    }
-    return statusbar::success();
+    return framed;
 }
 
 /// Append the PDU header, the message's fixed header (its size counts the payload) and the payload
@@ -244,7 +243,7 @@ void append_pdu(statusbar::BufferSerializerBuilderWithBuffer& writer, Message co
             [&](Command const& c) {
                 writer
                     .append(CommandHeader{
-                        .command_size = size,
+                        .size = size,
                         .handle = c.handle,
                         .target = c.target,
                         .def_level = c.method.def_level,
@@ -255,7 +254,7 @@ void append_pdu(statusbar::BufferSerializerBuilderWithBuffer& writer, Message co
             [&](Response const& r) {
                 writer
                     .append(ResponseHeader{
-                        .response_size = size,
+                        .size = size,
                         .handle = r.handle,
                         .status = static_cast<uint8_t>(r.status),
                         .parameter_count = r.parameters.count})
@@ -264,7 +263,7 @@ void append_pdu(statusbar::BufferSerializerBuilderWithBuffer& writer, Message co
             [&](Notification const& n) {
                 writer
                     .append(Notification2Header{
-                        .notification_size = size,
+                        .size = size,
                         .emitter = n.event.emitter,
                         .def_level = n.event.id.def_level,
                         .event_index = n.event.id.index,
@@ -308,17 +307,24 @@ auto parse_pdu(std::span<uint8_t const> const pdu) noexcept -> statusbar::Status
 
 auto serialized_pdu_size(Message const& message) noexcept -> size_t
 {
-    return PduHeader::LENGTH + framing(message).size;
+    auto const message_size = std::visit(
+        Overloaded{
+            [](Command const& c) { return CommandHeader::LENGTH + c.parameters.data.size(); },
+            [](Response const& r) { return ResponseHeader::LENGTH + r.parameters.data.size(); },
+            [](Notification const& n) { return Notification2Header::LENGTH + n.data.size(); },
+        },
+        message);
+    return PduHeader::LENGTH + message_size;
 }
 
 auto serialize_pdu(Message const& message, std::span<uint8_t> const buffer) noexcept -> statusbar::StatusValue<size_t>
 {
-    auto const framed = framing(message);
-    if (auto const checked = check_framing(message, framed, buffer); !checked) {
-        return statusbar::forward_failure(checked);
+    auto const framed = checked_framing(message, buffer);
+    if (!framed) {
+        return statusbar::forward_failure(framed);
     }
     statusbar::BufferSerializerBuilderWithBuffer writer{buffer};
-    append_pdu(writer, message, framed);
+    append_pdu(writer, message, *framed);
     if (!writer) {
         return statusbar::failure(writer.status().error());
     }

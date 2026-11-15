@@ -3,23 +3,9 @@
 // Copyright 2026 PADL Software Pty Ltd
 // SPDX-License-Identifier: MIT
 
-/// OCP.1 PDUs - AES70-3 section 6 framing, one message per PDU.
-///
-///     PDU           syncVal 0x3B, protocolVersion u16 = 1, pduSize u32 (bytes
-///                   after syncVal), pduType u8, messageCount u16, messages
-///     Command       commandSize u32, handle u32, targetONo u32,
-///                   methodID {defLevel u16, methodIndex u16}, parameterCount u8,
-///                   parameters
-///     Response      responseSize u32, handle u32, statusCode u8,
-///                   parameterCount u8, parameters
-///     Notification2 notificationSize u32, emitterONo u32,
-///                   eventID {defLevel u16, eventIndex u16}, notificationType u8,
-///                   data
-///
-/// A message size counts the message's own bytes, its size field included. Only
-/// PDUs holding exactly one Command, Response or Notification2 are accepted:
-/// keep-alives and Notification1 belong to a full OCP.1 connection, which this
-/// is not. Parsed parameters and data are views into the PDU.
+/// OCP.1 PDUs holding one Command, Response or Notification2 (AES70-3 Ocp1Header, Ocp1Command,
+/// Ocp1Response, Ocp1Notification2): framing a byte stream, parsing and serializing. The layout and
+/// what is refused are in docs/OCP1_MODULE.md.
 
 #include "padl/ocp1/ocp1_error.hpp"
 #include "statusbar/buffer/buffer.hpp"
@@ -35,16 +21,16 @@
 
 namespace padl::ocp1 {
 
-using statusbar::ieee::doublet_t;
-using statusbar::ieee::octet_t;
-using statusbar::ieee::quadlet_t;
-
+/// syncVal, the first octet of every PDU
 inline constexpr uint8_t SYNC = 0x3B;
-/// The version written; AES70-3 says it is always 1, but some controllers write a
-/// higher one (the AES70 revision, it seems), so parsing accepts any version >= 1.
+/// The protocolVersion written; parsing accepts any version from 1.
 inline constexpr uint16_t PROTOCOL_VERSION = 1;
 
-/// OcaMessageType
+//
+// Message types and status codes - AES70-3 OcaMessageType, AES70-2 OcaStatus
+//
+
+/// OcaMessageType: what the messages of a PDU are.
 enum class MessageType : uint8_t
 {
     command = 0,                ///< Ocp1CommandPdu, no response wanted
@@ -55,7 +41,7 @@ enum class MessageType : uint8_t
     notification2,
 };
 
-/// OcaStatus
+/// OcaStatus: what a response says of its command.
 enum class OcaStatus : uint8_t
 {
     ok = 0,
@@ -78,14 +64,18 @@ enum class OcaStatus : uint8_t
     busy,
 };
 
-/// Ocp1Notification2Type
+/// Ocp1Notification2Type: an event, or an exception the emitter reports.
 enum class NotificationType : uint8_t
 {
     event = 0,
     exception,
 };
 
-/// OcaMethodID; a record, for methods that take one
+//
+// Identifiers - AES70-2 OcaMethodID, OcaEventID, OcaEvent
+//
+
+/// OcaMethodID: a method's definition level and index; a record, for methods that need one.
 struct MethodId
 {
     uint16_t def_level{};
@@ -95,7 +85,7 @@ struct MethodId
     auto operator==(MethodId const&) const -> bool = default;
 };
 
-/// OcaEventID
+/// OcaEventID: an event's definition level and index.
 struct EventId
 {
     uint16_t def_level{};
@@ -105,7 +95,7 @@ struct EventId
     auto operator==(EventId const&) const -> bool = default;
 };
 
-/// OcaEvent
+/// OcaEvent: the object emitting an event, and the event.
 struct Event
 {
     uint32_t emitter{};
@@ -115,6 +105,10 @@ struct Event
     auto operator==(Event const&) const -> bool = default;
 };
 
+//
+// Messages - AES70-3 Ocp1Command, Ocp1Response, Ocp1Notification2
+//
+
 /// A method's encoded parameters, and how many values they are. Every value is at
 /// least a byte, so a count of 0 has no data and any other is at most its length.
 struct Parameters
@@ -123,6 +117,7 @@ struct Parameters
     std::span<uint8_t const> data;
 };
 
+/// Ocp1Command: method `method` of object `target`; `response_required` picks the PDU's message type.
 struct Command
 {
     uint32_t handle{};
@@ -132,6 +127,7 @@ struct Command
     bool response_required{true};
 };
 
+/// Ocp1Response: the answer to the command with `handle`, its parameters the method's results.
 struct Response
 {
     uint32_t handle{};
@@ -139,8 +135,8 @@ struct Response
     Parameters parameters;
 };
 
-/// A Notification2. Its data is never empty: an event carries its parameters and an
-/// exception its OcaNotification2ExceptionData, and SwiftOCA refuses one without.
+/// Ocp1Notification2: an event's parameters, or an exception's Ocp1Notification2ExceptionData.
+/// Either way its data is not empty.
 struct Notification
 {
     Event event;
@@ -148,61 +144,93 @@ struct Notification
     std::span<uint8_t const> data;
 };
 
+/// The one message a PDU holds
 using Message = std::variant<Command, Response, Notification>;
 
-/// syncVal and the PDU header (AES70-3 Ocp1Header)
+//
+// Wire headers - AES70-3 Ocp1Header and the message headers
+//
+
+/// syncVal and Ocp1Header
 struct PduHeader
 {
     static constexpr size_t LENGTH = 10;
 
-    octet_t sync;
-    doublet_t protocol_version;
-    quadlet_t pdu_size;  ///< bytes after sync
-    octet_t message_type;
-    doublet_t message_count;
+    statusbar::ieee::octet_t sync;                ///< syncVal, SYNC
+    statusbar::ieee::doublet_t protocol_version;  ///< protocolVersion
+    statusbar::ieee::quadlet_t pdu_size;          ///< pduSize: the PDU's bytes after syncVal
+    statusbar::ieee::octet_t message_type;        ///< pduType, a MessageType
+    statusbar::ieee::doublet_t message_count;     ///< messageCount
 };
 
 static_assert(sizeof(PduHeader) == PduHeader::LENGTH);
 static_assert(alignof(PduHeader) == 1);
+static_assert(offsetof(PduHeader, sync) == 0);
+static_assert(offsetof(PduHeader, protocol_version) == 1);
+static_assert(offsetof(PduHeader, pdu_size) == 3);
+static_assert(offsetof(PduHeader, message_type) == 7);
+static_assert(offsetof(PduHeader, message_count) == 8);
 
+/// Ocp1Command up to its parameters
 struct CommandHeader
 {
     static constexpr size_t LENGTH = 17;
 
-    quadlet_t command_size;
-    quadlet_t handle;
-    quadlet_t target;
-    doublet_t def_level;
-    doublet_t method_index;
-    octet_t parameter_count;
+    statusbar::ieee::quadlet_t size;           ///< commandSize: the message's bytes, this field's included
+    statusbar::ieee::quadlet_t handle;         ///< handle
+    statusbar::ieee::quadlet_t target;         ///< targetONo
+    statusbar::ieee::doublet_t def_level;      ///< methodID.defLevel
+    statusbar::ieee::doublet_t method_index;   ///< methodID.methodIndex
+    statusbar::ieee::octet_t parameter_count;  ///< parameters.parameterCount
 };
 
 static_assert(sizeof(CommandHeader) == CommandHeader::LENGTH);
+static_assert(offsetof(CommandHeader, size) == 0);
+static_assert(offsetof(CommandHeader, handle) == 4);
+static_assert(offsetof(CommandHeader, target) == 8);
+static_assert(offsetof(CommandHeader, def_level) == 12);
+static_assert(offsetof(CommandHeader, method_index) == 14);
+static_assert(offsetof(CommandHeader, parameter_count) == 16);
 
+/// Ocp1Response up to its parameters
 struct ResponseHeader
 {
     static constexpr size_t LENGTH = 10;
 
-    quadlet_t response_size;
-    quadlet_t handle;
-    octet_t status;
-    octet_t parameter_count;
+    statusbar::ieee::quadlet_t size;           ///< responseSize: the message's bytes, this field's included
+    statusbar::ieee::quadlet_t handle;         ///< handle
+    statusbar::ieee::octet_t status;           ///< statusCode, an OcaStatus
+    statusbar::ieee::octet_t parameter_count;  ///< parameters.parameterCount
 };
 
 static_assert(sizeof(ResponseHeader) == ResponseHeader::LENGTH);
+static_assert(offsetof(ResponseHeader, size) == 0);
+static_assert(offsetof(ResponseHeader, handle) == 4);
+static_assert(offsetof(ResponseHeader, status) == 8);
+static_assert(offsetof(ResponseHeader, parameter_count) == 9);
 
+/// Ocp1Notification2 up to its data
 struct Notification2Header
 {
     static constexpr size_t LENGTH = 13;
 
-    quadlet_t notification_size;
-    quadlet_t emitter;
-    doublet_t def_level;
-    doublet_t event_index;
-    octet_t notification_type;
+    statusbar::ieee::quadlet_t size;             ///< notificationSize: the message's bytes, this field's included
+    statusbar::ieee::quadlet_t emitter;          ///< event.emitterONo
+    statusbar::ieee::doublet_t def_level;        ///< event.eventID.defLevel
+    statusbar::ieee::doublet_t event_index;      ///< event.eventID.eventIndex
+    statusbar::ieee::octet_t notification_type;  ///< notificationType, a NotificationType
 };
 
 static_assert(sizeof(Notification2Header) == Notification2Header::LENGTH);
+static_assert(offsetof(Notification2Header, size) == 0);
+static_assert(offsetof(Notification2Header, emitter) == 4);
+static_assert(offsetof(Notification2Header, def_level) == 8);
+static_assert(offsetof(Notification2Header, event_index) == 10);
+static_assert(offsetof(Notification2Header, notification_type) == 12);
+
+//
+// Framing, parsing and serializing
+//
 
 /// The size of the PDU whose header begins `header`, for a reader framing a
 /// stream: nullopt while the header is incomplete, an error if it is not a PDU

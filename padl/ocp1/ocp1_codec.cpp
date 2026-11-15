@@ -3,6 +3,7 @@
 
 #include "padl/ocp1/ocp1_codec.hpp"
 
+#include "statusbar/buffer/buffer_error.hpp"
 #include "statusbar/buffer/span_utils.hpp"
 
 #include <algorithm>
@@ -72,7 +73,7 @@ constexpr auto is_scalar(std::span<uint8_t const> const sequence) noexcept -> bo
 struct Scan
 {
     size_t scalars{0};       ///< whole scalars walked
-    size_t bytes{0};         ///< the bytes they take
+    size_t bytes{0};         ///< the bytes they occupy
     bool well_formed{true};  ///< false if the walk stopped at a malformed sequence
     bool truncated{false};   ///< true if it stopped at a sequence cut short
 };
@@ -120,7 +121,7 @@ auto Decoder::status() const noexcept -> statusbar::Status
     return reader_.status();
 }
 
-auto Decoder::take(size_t const length) noexcept -> std::span<uint8_t const>
+auto Decoder::consume(size_t const length) noexcept -> std::span<uint8_t const>
 {
     size_t const start = position();
     reader_.skip(length);
@@ -150,16 +151,18 @@ namespace {
 
 /// The bytes of `count` UTF-8 scalars at the decoder: the count is of scalars, so the byte
 /// length is known only once they are walked
-auto take_scalars(Decoder& decoder, uint16_t const count) -> std::span<uint8_t const>
+auto consume_scalars(Decoder& decoder, uint16_t const count) -> std::span<uint8_t const>
 {
-    auto const rest = decoder.rest();
-    auto const walk = scan(rest, count);
+    auto const walk = scan(decoder.rest(), count);
     if (!walk.well_formed) {
         decoder.fail(Ocp1Error::invalid_utf8);
         return {};
     }
-    // fewer scalars than counted: asking for more than there is fails as a short buffer
-    return decoder.take(walk.scalars == count ? walk.bytes : rest.size() + 1);
+    if (walk.scalars != count) {
+        decoder.fail(statusbar::BufferError::insufficient_data);
+        return {};
+    }
+    return decoder.consume(walk.bytes);
 }
 
 }  // namespace
@@ -170,7 +173,7 @@ void decode(Decoder& decoder, std::string& text)
     decoder.get(count);
     text.clear();
     if (decoder) {
-        text.assign(statusbar::as_string_view(take_scalars(decoder, count)));
+        text.assign(statusbar::as_string_view(consume_scalars(decoder, count)));
     }
 }
 
@@ -188,7 +191,7 @@ void decode(Decoder& decoder, Blob& blob)
 {
     uint16_t length{};
     decoder.get(length);
-    auto const bytes = decoder.take(length);
+    auto const bytes = decoder.consume(length);
     blob.bytes.assign(bytes.begin(), bytes.end());
 }
 
@@ -206,7 +209,7 @@ void decode(Decoder& decoder, LongBlob& blob)
 {
     uint32_t length{};
     decoder.get(length);
-    auto const bytes = decoder.take(length);
+    auto const bytes = decoder.consume(length);
     blob.bytes.assign(bytes.begin(), bytes.end());
 }
 

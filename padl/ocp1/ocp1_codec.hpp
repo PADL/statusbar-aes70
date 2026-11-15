@@ -3,29 +3,9 @@
 // Copyright 2026 PADL Software Pty Ltd
 // SPDX-License-Identifier: MIT
 
-/// OCP.1 values - the AES70-3 encoding of AES70 data types.
-///
-/// Values are big-endian and untagged, written one after another. An integer or
-/// enum is its fixed-width bits, a boolean one octet, a float its IEEE 754 bits.
-/// A string (OcaString) is a 16-bit count of Unicode scalars and then its UTF-8;
-/// a blob (OcaBlob) a 16-bit length and its bytes; a list (OcaList) a 16-bit
-/// count and its elements; a map or multimap a 16-bit count of key-value pairs.
-/// A record is its fields in order: a struct opts in by naming them in a
-/// `fields()` member,
-///
-///     struct OcaMediaClockRate
-///     {
-///         float nominal_rate, pull_range, accuracy, jitter_max;
-///         auto fields(this auto& self) { return std::tie(self.nominal_rate, ...); }
-///     };
-///
-/// and any other type by providing `encode(Encoder&, T const&)` and
-/// `decode(Decoder&, T&)` in its own namespace.
-///
-/// An `Encoder` writes into a caller's buffer and a `Decoder` reads a span, both
-/// through statusbar's buffer builders. Errors are sticky: after the first, an
-/// encoder writes nothing more and a decoder reads nothing more, and `status()`
-/// reports it.
+/// OCP.1 values: the AES70-3 encoding of AES70 data types, big-endian and untagged, through an
+/// `Encoder` and a `Decoder` over statusbar's buffer builders. A struct is a record by naming its
+/// fields in `fields()`; the encoding rules are in docs/OCP1_MODULE.md.
 
 #include "padl/ocp1/ocp1_error.hpp"
 #include "statusbar/buffer/buffer.hpp"
@@ -103,7 +83,7 @@ struct Interval
 template <typename T>
 concept Record = requires(T& value) { value.fields(); };
 
-/// Writes OCP.1 values into a buffer
+/// Writes OCP.1 values into a caller's buffer. Errors are sticky: after the first, nothing more is written.
 class Encoder
 {
   public:
@@ -121,16 +101,17 @@ class Encoder
         return *this;
     }
 
+    /// Whether every write so far succeeded
     [[nodiscard]] explicit operator bool() const noexcept { return !error_ && static_cast<bool>(writer_); }
+    /// The first error, or success
     [[nodiscard]] auto status() const noexcept -> statusbar::Status;
+    /// The bytes written
     [[nodiscard]] auto position() const noexcept -> size_t { return writer_.position(); }
-    /// What has been written
-    [[nodiscard]] auto bytes() const noexcept -> std::span<uint8_t const> { return writer_.get_span(); }
 
     /// For `encode()` overloads: the builder to append wire values to.
     [[nodiscard]] auto writer() noexcept -> statusbar::BufferSerializerBuilder& { return writer_; }
-    /// For `encode()` overloads: fail, if nothing has failed yet.
-    void fail(Ocp1Error const error) noexcept
+    /// For `encode()` overloads: fail with `error`, if nothing has failed yet.
+    void fail(std::error_code const error) noexcept
     {
         if (!error_) {
             error_ = error;
@@ -142,7 +123,7 @@ class Encoder
     std::error_code error_{};
 };
 
-/// Reads OCP.1 values from a span
+/// Reads OCP.1 values from a span. Errors are sticky: after the first, nothing more is read.
 class Decoder
 {
   public:
@@ -161,9 +142,13 @@ class Decoder
         return *this;
     }
 
+    /// Whether every read so far succeeded
     [[nodiscard]] explicit operator bool() const noexcept { return !error_ && static_cast<bool>(reader_); }
+    /// The first error, or success
     [[nodiscard]] auto status() const noexcept -> statusbar::Status;
+    /// The bytes read
     [[nodiscard]] auto position() const noexcept -> size_t { return reader_.position(); }
+    /// The bytes not yet read
     [[nodiscard]] auto remaining() const noexcept -> size_t { return input_.size() - position(); }
 
     /// For `decode()` overloads: the builder to parse wire values from.
@@ -172,9 +157,9 @@ class Decoder
     [[nodiscard]] auto rest() const noexcept -> std::span<uint8_t const> { return input_.subspan(position()); }
     /// For `decode()` overloads: the next `length` bytes, consumed; empty, and the
     /// decoder failed, if there are fewer.
-    [[nodiscard]] auto take(size_t length) noexcept -> std::span<uint8_t const>;
-    /// For `decode()` overloads: fail, if nothing has failed yet.
-    void fail(Ocp1Error const error) noexcept
+    [[nodiscard]] auto consume(size_t length) noexcept -> std::span<uint8_t const>;
+    /// For `decode()` overloads: fail with `error`, if nothing has failed yet.
+    void fail(std::error_code const error) noexcept
     {
         if (!error_) {
             error_ = error;
@@ -187,7 +172,9 @@ class Decoder
     std::error_code error_{};
 };
 
-// ---- scalars ----
+//
+// Scalars - AES70-3 OcaBoolean, OcaInt*, OcaUint*, OcaFloat*, enumerations
+//
 
 /// The unsigned integer as wide as `T`
 template <typename T>
@@ -214,6 +201,7 @@ concept Enumeration =
 template <typename T>
 concept Scalar = FixedWidth<T> || Enumeration<T>;
 
+/// Write a scalar: its bits big-endian, a boolean as one octet, an enumeration as its declared base.
 template <Scalar T>
 void encode(Encoder& encoder, T const value) noexcept
 {
@@ -228,6 +216,7 @@ void encode(Encoder& encoder, T const value) noexcept
     }
 }
 
+/// Read a scalar; any nonzero octet is true.
 template <Scalar T>
 void decode(Decoder& decoder, T& value) noexcept
 {
@@ -247,20 +236,31 @@ void decode(Decoder& decoder, T& value) noexcept
     }
 }
 
-// ---- strings and blobs ----
+//
+// Strings and blobs - AES70-3 OcaString, OcaBlob, OcaLongBlob
+//
 
-/// An OcaString: fails with invalid_utf8 unless `text` is well-formed UTF-8.
+/// Write an OcaString: its count of Unicode scalars, then its UTF-8. invalid_utf8 unless `text`
+/// is well-formed UTF-8, too_long past MAX_COUNT scalars.
 void encode(Encoder& encoder, std::string_view text);
+/// Read an OcaString: invalid_utf8 for a malformed scalar, insufficient_data for fewer than counted.
 void decode(Decoder& decoder, std::string& text);
 
+/// Write an OcaBlob: its 16-bit length, then its bytes; too_long past MAX_COUNT bytes.
 void encode(Encoder& encoder, Blob const& blob);
+/// Read an OcaBlob.
 void decode(Decoder& decoder, Blob& blob);
 
+/// Write an OcaLongBlob: its 32-bit length, then its bytes.
 void encode(Encoder& encoder, LongBlob const& blob);
+/// Read an OcaLongBlob.
 void decode(Decoder& decoder, LongBlob& blob);
 
-// ---- lists and maps ----
+//
+// Lists and maps - AES70-3 OcaList, OcaMap, OcaMultiMap
+//
 
+/// Write an OcaList: its 16-bit count, then its elements; too_long past MAX_COUNT elements.
 template <typename T>
 void encode(Encoder& encoder, std::vector<T> const& list)
 {
@@ -275,6 +275,7 @@ void encode(Encoder& encoder, std::vector<T> const& list)
     }
 }
 
+/// Read an OcaList, reserving no more than the input could hold.
 template <typename T>
 void decode(Decoder& decoder, std::vector<T>& list)
 {
@@ -291,6 +292,7 @@ void decode(Decoder& decoder, std::vector<T>& list)
     }
 }
 
+/// Write an OcaMap or OcaMultiMap: its 16-bit count, then each key and its value.
 template <typename K, typename V>
 void encode(Encoder& encoder, Map<K, V> const& map)
 {
@@ -304,6 +306,7 @@ void encode(Encoder& encoder, Map<K, V> const& map)
     }
 }
 
+/// Read an OcaMap or OcaMultiMap, in wire order.
 template <typename K, typename V>
 void decode(Decoder& decoder, Map<K, V>& map)
 {
@@ -318,21 +321,27 @@ void decode(Decoder& decoder, Map<K, V>& map)
     }
 }
 
-// ---- records ----
+//
+// Records
+//
 
+/// Write a record: its fields in order.
 template <Record T>
 void encode(Encoder& encoder, T const& record)
 {
     std::apply([&encoder](auto const&... field) { (encoder.put(field), ...); }, record.fields());
 }
 
+/// Read a record: its fields in order.
 template <Record T>
 void decode(Decoder& decoder, T& record)
 {
     std::apply([&decoder](auto&... field) { (decoder.get(field), ...); }, record.fields());
 }
 
-// ---- whole buffers ----
+//
+// Whole buffers
+//
 
 /// Write `values` one after another into `buffer`; the number of bytes written.
 template <typename... T>

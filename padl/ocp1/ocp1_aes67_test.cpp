@@ -4,25 +4,16 @@
 #include "padl/ocp1/ocp1_aes67.hpp"
 
 #include "statusbar/test/test.hpp"
+#include "statusbar/test/test_util.hpp"
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
-using namespace statusbar;
 using namespace padl::ocp1;
 
 namespace {
-
-auto from_hex(std::string_view const hex) -> std::vector<uint8_t>
-{
-    std::vector<uint8_t> out;
-    for (size_t i = 0; i + 1 < hex.size(); i += 2) {
-        out.push_back(static_cast<uint8_t>(std::stoul(std::string{hex.substr(i, 2)}, nullptr, 16)));
-    }
-    return out;
-}
 
 /// An output's record, as SwiftOCA's Aes67EndpointAdaptationData encodes it below.
 auto output_record() -> Aes67EndpointAdaptationData
@@ -44,37 +35,40 @@ auto output_record() -> Aes67EndpointAdaptationData
     };
 }
 
+/// The bytes SwiftOCA's Aes67EndpointAdaptationData.blob writes for output_record()
+constexpr char OUTPUT_RECORD[] = "0001"  // IPParameters: one
+                                 "0001"  // NetworkAssignmentID
+                                 "000a"
+                                 "31302e31302e33322e35"  // SourceAddress
+                                 "000a"
+                                 "3233392e36392e352e31"  // DestinationAddress
+                                 "00"
+                                 "0000"
+                                 "138c"  // TimeToLive, SourcePort, DestinationPort
+                                 "ff"
+                                 "ff"  // DSCP, COS
+                                 "62"
+                                 "12345678"  // PayloadType, RTPTimestampOffset
+                                 "00000000"  // TimeSkewMaxTolerated
+                                 "0003"
+                                 "4f7574"  // RemoteEndpointName
+                                 "0004"
+                                 "4e4f4e45"  // RemoteControlType
+                                 "0007"      // TransmissionCapabilities
+                                 "00000000"  // PresentationTimeOffset
+                                 "0000"      // MediaInfo
+                                 "0005"
+                                 "763d300d0a"  // ActiveSDP
+                                 "03"          // MediaIDType Mid
+                                 "0001"
+                                 "61";  // MediaID
+
 }  // namespace
 
-// The bytes SwiftOCA's Aes67EndpointAdaptationData.blob writes for output_record()
 TEST(ocp1_aes67, the_record_encodes_as_swiftoca_writes_it)
 {
-    auto const expected = from_hex("0001"  // IPParameters: one
-                                   "0001"  // NetworkAssignmentID
-                                   "000a"
-                                   "31302e31302e33322e35"  // SourceAddress
-                                   "000a"
-                                   "3233392e36392e352e31"  // DestinationAddress
-                                   "00"
-                                   "0000"
-                                   "138c"  // TimeToLive, SourcePort, DestinationPort
-                                   "ff"
-                                   "ff"  // DSCP, COS
-                                   "62"
-                                   "12345678"  // PayloadType, RTPTimestampOffset
-                                   "00000000"  // TimeSkewMaxTolerated
-                                   "0003"
-                                   "4f7574"  // RemoteEndpointName
-                                   "0004"
-                                   "4e4f4e45"  // RemoteControlType
-                                   "0007"      // TransmissionCapabilities
-                                   "00000000"  // PresentationTimeOffset
-                                   "0000"      // MediaInfo
-                                   "0005"
-                                   "763d300d0a"  // ActiveSDP
-                                   "03"          // MediaIDType Mid
-                                   "0001"
-                                   "61");  // MediaID
+    auto const bytes = hex_to_bytes<(sizeof(OUTPUT_RECORD) - 1) / 2>(OUTPUT_RECORD);
+    std::vector<uint8_t> const expected{bytes.begin(), bytes.end()};
     auto const blob = encode_adaptation_data(output_record());
     EXPECT_TRUE(blob && blob->bytes == expected);
     auto const decoded = decode_adaptation_data(expected);

@@ -13,7 +13,6 @@
 #include <tuple>
 #include <vector>
 
-using namespace statusbar;
 using namespace padl::ocp1;
 
 namespace {
@@ -158,9 +157,9 @@ TEST(ocp1_codec, a_short_string_is_a_buffer_error)
          }) {
         auto const value = decode_value<std::string>(truncated);
         EXPECT_FALSE(value.has_value());
-        EXPECT_EQ(value.error(), make_error_code(BufferError::insufficient_data));
+        EXPECT_EQ(value.error(), make_error_code(statusbar::BufferError::insufficient_data));
     }
-    // a string followed by more: only its scalars are taken
+    // a string followed by more: only its scalars are read
     std::vector<uint8_t> const followed{0x00, 0x01, 0xC3, 0xBC, 0x00, 0x07};
     Decoder decoder{followed};
     std::string text;
@@ -176,7 +175,7 @@ TEST(ocp1_codec, writes_blobs_lists_and_maps_with_counts)
     EXPECT_EQ(encoded(Blob{{1, 2, 3}}), (std::vector<uint8_t>{0x00, 0x03, 1, 2, 3}));
     EXPECT_EQ(encoded(std::vector<uint16_t>{1, 2}), (std::vector<uint8_t>{0x00, 0x02, 0x00, 0x01, 0x00, 0x02}));
     // a multimap: one key twice, kept in order (OcaMultiMap<OcaUint16, OcaPortID>)
-    Map<uint16_t, PortId> const channel_map{{{1, {1, 1}}, {1, {1, 2}}}};
+    Map<uint16_t, PortId> const channel_map{{{1, {.mode = 1, .index = 1}}, {1, {.mode = 1, .index = 2}}}};
     EXPECT_EQ(encoded(channel_map), (std::vector<uint8_t>{0x00, 0x02, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x01, 0x01, 0x00, 0x02}));
 
     auto const map = decode_value<Map<uint16_t, PortId>>(encoded(channel_map));
@@ -211,7 +210,7 @@ TEST(ocp1_codec, lists_may_hold_strings_and_records)
         (std::vector<uint8_t>{0x00, 0x03, 0x00, 0x01, 'a', 0x00, 0x05, 'B', 0xC3, 0xBC, 'h', 'n', 'e', 0x00, 0x00}));
     auto const value = decode_value<std::vector<std::string>>(encoded(names));
     EXPECT_TRUE(value.value_or(std::vector<std::string>{}) == names);
-    Map<std::string, std::vector<PortId>> const by_name{{{"in", {{1, 1}, {1, 2}}}}};
+    Map<std::string, std::vector<PortId>> const by_name{{{"in", {{.mode = 1, .index = 1}, {.mode = 1, .index = 2}}}}};
     auto const map = decode_value<Map<std::string, std::vector<PortId>>>(encoded(by_name));
     EXPECT_TRUE(map.value_or(Map<std::string, std::vector<PortId>>{}) == by_name);
 }
@@ -248,8 +247,10 @@ TEST(ocp1_codec, writes_a_record_as_its_fields)
 
     ClockState const known{
         .availability = Availability::available,
-        .supported_rates = {{48000.0F, 0.0F, 1e-6F, 1e-9F}, {96000.0F, 0.0F, 0.0F, 0.0F}},
-        .current_rate = {48000.0F, 0.0F, 1e-6F, 1e-9F},
+        .supported_rates =
+            {{.nominal_rate = 48000.0F, .pull_range = 0.0F, .accuracy = 1e-6F, .jitter_max = 1e-9F},
+             {.nominal_rate = 96000.0F, .pull_range = 0.0F, .accuracy = 0.0F, .jitter_max = 0.0F}},
+        .current_rate = {.nominal_rate = 48000.0F, .pull_range = 0.0F, .accuracy = 1e-6F, .jitter_max = 1e-9F},
     };
     auto const value = decode_value<ClockState>(encoded(known));
     EXPECT_TRUE(value.has_value());
@@ -269,7 +270,7 @@ TEST(ocp1_codec, a_count_past_the_data_fails_without_reading_on)
     std::vector<uint8_t> const data{0xFF, 0xFF, 0x00, 0x01};
     auto const value = decode_value<std::vector<uint16_t>>(data);
     EXPECT_FALSE(value.has_value());
-    EXPECT_EQ(value.error(), make_error_code(BufferError::insufficient_data));
+    EXPECT_EQ(value.error(), make_error_code(statusbar::BufferError::insufficient_data));
 }
 
 TEST(ocp1_codec, errors_are_sticky)
@@ -278,10 +279,11 @@ TEST(ocp1_codec, errors_are_sticky)
     Encoder encoder{buffer};
     encoder.put(uint16_t{1}).put(uint16_t{2}).put(uint8_t{3});
     EXPECT_FALSE(static_cast<bool>(encoder));
-    EXPECT_EQ(encoder.status().error(), make_error_code(BufferError::insufficient_space));
-    EXPECT_EQ(bytes(encoder.bytes()), (std::vector<uint8_t>{0x00, 0x01}));
+    EXPECT_EQ(encoder.status().error(), make_error_code(statusbar::BufferError::insufficient_space));
+    EXPECT_EQ(encoder.position(), size_t{2});
+    EXPECT_EQ(bytes(buffer), (std::vector<uint8_t>{0x00, 0x01, 0x00}));
 
-    std::vector<uint16_t> too_long(MAX_COUNT + 1);
+    std::vector<uint16_t> const too_long(MAX_COUNT + 1);
     std::vector<uint8_t> large(4 * MAX_COUNT);
     auto const result = encode_values(large, too_long);
     EXPECT_FALSE(result.has_value());
