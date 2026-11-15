@@ -4,11 +4,12 @@ statusbar_package_module_init()
 
 # Module subdirectories — dependency order.
 add_subdirectory(ocp1)
+add_subdirectory(oca)
 
 # Populate the package INTERFACE library — skipped under an outer aggregate
 # build, which populates a single shared `statusbar` itself.
 if(NOT STATUSBAR_AGGREGATE_BUILD)
-  target_link_libraries(statusbar INTERFACE statusbar-ocp1 statusbar::test)
+  target_link_libraries(statusbar INTERFACE statusbar-ocp1 statusbar-oca statusbar::test)
 endif()
 
 # Standalone per-package test binary (statusbar_package_test_binary in

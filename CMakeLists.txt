@@ -22,6 +22,7 @@ add_subdirectory(padl)
 # Export each module target under the short statusbar::<name> form, so dependent
 # packages find_package() them as statusbar::<module>.
 set_target_properties(statusbar-ocp1 PROPERTIES EXPORT_NAME ocp1)
+set_target_properties(statusbar-oca PROPERTIES EXPORT_NAME oca)
 
 # Uniform statusbar- prefixed on-disk names for installed executables
 # (statusbar_prefix_tool_names in cmake/module.cmake).

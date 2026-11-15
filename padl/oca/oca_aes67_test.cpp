@@ -1,7 +1,7 @@
 // Copyright 2026 PADL Software Pty Ltd
 // SPDX-License-Identifier: MIT
 
-#include "padl/ocp1/ocp1_aes67.hpp"
+#include "padl/oca/oca_aes67.hpp"
 
 #include "statusbar/test/test.hpp"
 #include "statusbar/test/test_util.hpp"
@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-using namespace padl::ocp1;
+using namespace padl::oca;
 
 namespace {
 
@@ -65,7 +65,7 @@ constexpr char OUTPUT_RECORD[] = "0001"  // IPParameters: one
 
 }  // namespace
 
-TEST(ocp1_aes67, the_record_encodes_as_swiftoca_writes_it)
+TEST(oca_aes67, the_record_encodes_as_swiftoca_writes_it)
 {
     auto const bytes = hex_to_bytes<(sizeof(OUTPUT_RECORD) - 1) / 2>(OUTPUT_RECORD);
     std::vector<uint8_t> const expected{bytes.begin(), bytes.end()};
@@ -75,7 +75,7 @@ TEST(ocp1_aes67, the_record_encodes_as_swiftoca_writes_it)
     EXPECT_TRUE(decoded && *decoded == output_record());
 }
 
-TEST(ocp1_aes67, an_empty_record_round_trips)
+TEST(oca_aes67, an_empty_record_round_trips)
 {
     Aes67EndpointAdaptationData const empty{};
     auto const blob = encode_adaptation_data(empty);
@@ -84,24 +84,24 @@ TEST(ocp1_aes67, an_empty_record_round_trips)
     EXPECT_TRUE(decoded && *decoded == empty);
 }
 
-TEST(ocp1_aes67, trailing_bytes_are_refused)
+TEST(oca_aes67, trailing_bytes_are_refused)
 {
     auto blob = encode_adaptation_data(output_record());
     EXPECT_TRUE(blob.has_value());
     blob->bytes.push_back(0);
     auto const decoded = decode_adaptation_data(blob->bytes);
     EXPECT_FALSE(decoded.has_value());
-    EXPECT_EQ(decoded.error(), make_error_code(Ocp1Error::trailing_data));
+    EXPECT_EQ(decoded.error(), make_error_code(padl::ocp1::Ocp1Error::trailing_data));
 }
 
-TEST(ocp1_aes67, a_record_past_a_blob_is_too_long)
+TEST(oca_aes67, a_record_past_a_blob_is_too_long)
 {
     auto record = output_record();
     record.active_sdp.assign(40000, 'a');
     record.media_info.assign(40000, 'b');
     auto const blob = encode_adaptation_data(record);
     EXPECT_FALSE(blob.has_value());
-    EXPECT_EQ(blob.error(), make_error_code(Ocp1Error::too_long));
+    EXPECT_EQ(blob.error(), make_error_code(padl::ocp1::Ocp1Error::too_long));
 }
 
-TEST_MAIN(padl_ocp1, ocp1_aes67_test)
+TEST_MAIN(padl_oca, oca_aes67_test)

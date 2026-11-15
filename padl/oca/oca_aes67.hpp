@@ -6,7 +6,7 @@
 /// The AES70-21 AES67 adaptation records an OcaMediaStreamEndpoint's AdaptationData holds,
 /// as OCP.1 values: Aes67EndpointIPParameters, Aes67MediaIDType and Aes67EndpointAdaptationData.
 
-#include "padl/ocp1/ocp1_codec.hpp"
+#include "padl/ocp1/ocp1.hpp"
 
 #include <cstdint>
 #include <span>
@@ -14,7 +14,7 @@
 #include <tuple>
 #include <vector>
 
-namespace padl::ocp1 {
+namespace padl::oca {
 
 /// Aes67StreamTransmissionCapabilities (AES70-21), bits of Aes67EndpointAdaptationData.TransmissionCapabilities.
 inline constexpr uint16_t AES67_UNICAST_CAPABLE = 1U << 0U;
@@ -23,7 +23,7 @@ inline constexpr uint16_t AES67_INSECURE_CAPABLE = 1U << 2U;
 inline constexpr uint16_t AES67_DEFAULT_SECURITY_CAPABLE = 1U << 3U;
 
 /// Aes67MediaIDType (AES70-21 Clause 10.2.4): what kind of identifier an Aes67EndpointAdaptationData.MediaID is.
-/// The draft gives no width; it is an OcaUint8, as AES70-3 marshals its enumerations.
+/// It is encoded as an OcaUint8.
 enum class Aes67MediaIDType : uint8_t
 {
     none = 0,                ///< no identifier: the SDP holds one media description
@@ -71,7 +71,7 @@ struct Aes67EndpointAdaptationData
     uint8_t payload_type{0};
     uint32_t rtp_timestamp_offset{0};
     float time_skew_max_tolerated{0};
-    Blob remote_endpoint_name;
+    ocp1::Blob remote_endpoint_name;
     std::string remote_control_type;
     uint16_t transmission_capabilities{0};  ///< AES67_*_CAPABLE bits
     float presentation_time_offset{0};
@@ -100,9 +100,9 @@ struct Aes67EndpointAdaptationData
 };
 
 /// `data` as an AdaptationData blob; too_long when it does not fit one (65535 bytes).
-[[nodiscard]] auto encode_adaptation_data(Aes67EndpointAdaptationData const& data) -> statusbar::StatusValue<Blob>;
+[[nodiscard]] auto encode_adaptation_data(Aes67EndpointAdaptationData const& data) -> statusbar::StatusValue<ocp1::Blob>;
 
 /// The record a whole AdaptationData blob's `bytes` hold; trailing bytes are an error.
 [[nodiscard]] auto decode_adaptation_data(std::span<uint8_t const> bytes) -> statusbar::StatusValue<Aes67EndpointAdaptationData>;
 
-}  // namespace padl::ocp1
+}  // namespace padl::oca
