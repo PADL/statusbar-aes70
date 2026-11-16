@@ -102,25 +102,19 @@ class Encoder
     }
 
     /// Whether every write so far succeeded
-    [[nodiscard]] explicit operator bool() const noexcept { return !error_ && static_cast<bool>(writer_); }
+    [[nodiscard]] explicit operator bool() const noexcept { return static_cast<bool>(writer_); }
     /// The first error, or success
-    [[nodiscard]] auto status() const noexcept -> statusbar::Status;
+    [[nodiscard]] auto status() const noexcept -> statusbar::Status { return writer_.status(); }
     /// The bytes written
     [[nodiscard]] auto position() const noexcept -> size_t { return writer_.position(); }
 
     /// For `encode()` overloads: the builder to append wire values to.
     [[nodiscard]] auto writer() noexcept -> statusbar::BufferSerializerBuilder& { return writer_; }
     /// For `encode()` overloads: fail with `error`, if nothing has failed yet.
-    void fail(std::error_code const error) noexcept
-    {
-        if (!error_) {
-            error_ = error;
-        }
-    }
+    void fail(std::error_code const error) noexcept { writer_.fail(error); }
 
   private:
     statusbar::BufferSerializerBuilderWithBuffer writer_;
-    std::error_code error_{};
 };
 
 /// Reads OCP.1 values from a span. Errors are sticky: after the first, nothing more is read.
@@ -128,8 +122,7 @@ class Decoder
 {
   public:
     explicit Decoder(std::span<uint8_t const> const input) noexcept
-        : input_{input}
-        , reader_{input}
+        : reader_{input}
     {}
 
     /// Read `value`, unless an earlier read failed.
@@ -143,33 +136,26 @@ class Decoder
     }
 
     /// Whether every read so far succeeded
-    [[nodiscard]] explicit operator bool() const noexcept { return !error_ && static_cast<bool>(reader_); }
+    [[nodiscard]] explicit operator bool() const noexcept { return static_cast<bool>(reader_); }
     /// The first error, or success
-    [[nodiscard]] auto status() const noexcept -> statusbar::Status;
+    [[nodiscard]] auto status() const noexcept -> statusbar::Status { return reader_.status(); }
     /// The bytes read
     [[nodiscard]] auto position() const noexcept -> size_t { return reader_.position(); }
-    /// The bytes not yet read
-    [[nodiscard]] auto remaining() const noexcept -> size_t { return input_.size() - position(); }
+    /// The number of bytes not yet read
+    [[nodiscard]] auto available() const noexcept -> size_t { return reader_.available(); }
 
     /// For `decode()` overloads: the builder to parse wire values from.
     [[nodiscard]] auto reader() noexcept -> statusbar::BufferDeserializerBuilder& { return reader_; }
     /// For `decode()` overloads: the bytes not yet read.
-    [[nodiscard]] auto rest() const noexcept -> std::span<uint8_t const> { return input_.subspan(position()); }
+    [[nodiscard]] auto remaining() const noexcept -> std::span<uint8_t const> { return reader_.remaining(); }
     /// For `decode()` overloads: the next `length` bytes, consumed; empty, and the
     /// decoder failed, if there are fewer.
     [[nodiscard]] auto consume(size_t length) noexcept -> std::span<uint8_t const>;
     /// For `decode()` overloads: fail with `error`, if nothing has failed yet.
-    void fail(std::error_code const error) noexcept
-    {
-        if (!error_) {
-            error_ = error;
-        }
-    }
+    void fail(std::error_code const error) noexcept { reader_.fail(error); }
 
   private:
-    std::span<uint8_t const> input_;
     statusbar::BufferDeserializerBuilder reader_;
-    std::error_code error_{};
 };
 
 //
@@ -284,7 +270,7 @@ void decode(Decoder& decoder, std::vector<T>& list)
     decoder.get(count);
     list.clear();
     // every element is at least a byte, so a count the input cannot hold reserves nothing extra
-    list.reserve(std::min<size_t>(count, decoder.remaining()));
+    list.reserve(std::min<size_t>(count, decoder.available()));
     for (uint16_t i = 0; i < count && decoder; ++i) {
         T element{};
         decoder.get(element);
@@ -378,7 +364,7 @@ template <typename T>
     if (auto const status = decoder.status(); !status) {
         return statusbar::failure(status.error());
     }
-    if (decoder.remaining() != 0) {
+    if (decoder.available() != 0) {
         return statusbar::failure(Ocp1Error::trailing_data);
     }
     return value;

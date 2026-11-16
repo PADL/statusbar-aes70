@@ -105,30 +105,14 @@ auto scan(std::span<uint8_t const> const bytes, size_t const limit) noexcept -> 
 
 }  // namespace
 
-auto Encoder::status() const noexcept -> statusbar::Status
-{
-    if (error_) {
-        return statusbar::failure(error_);
-    }
-    return writer_.status();
-}
-
-auto Decoder::status() const noexcept -> statusbar::Status
-{
-    if (error_) {
-        return statusbar::failure(error_);
-    }
-    return reader_.status();
-}
-
 auto Decoder::consume(size_t const length) noexcept -> std::span<uint8_t const>
 {
-    size_t const start = position();
+    auto const bytes = reader_.remaining();
     reader_.skip(length);
     if (!*this) {
         return {};
     }
-    return input_.subspan(start, length);
+    return bytes.first(length);
 }
 
 void encode(Encoder& encoder, std::string_view const text)
@@ -153,7 +137,7 @@ namespace {
 /// length is known only once they are walked
 auto consume_scalars(Decoder& decoder, uint16_t const count) -> std::span<uint8_t const>
 {
-    auto const walk = scan(decoder.rest(), count);
+    auto const walk = scan(decoder.remaining(), count);
     if (!walk.well_formed) {
         decoder.fail(Ocp1Error::invalid_utf8);
         return {};

@@ -103,7 +103,7 @@ TEST(ocp1_codec, reads_scalars_back)
     EXPECT_EQ(d, -1.5);
     EXPECT_TRUE(b);
     EXPECT_EQ(a, Availability::available);
-    EXPECT_EQ(decoder.remaining(), size_t{0});
+    EXPECT_EQ(decoder.available(), size_t{0});
 }
 
 TEST(ocp1_codec, counts_a_string_in_unicode_scalars)
