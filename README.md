@@ -14,6 +14,7 @@ own, such as a private control socket. For a complete AES70 stack, see
 | --- | --- |
 | `ocp1` | AES70-3 values (integers, floats, booleans, strings counted in Unicode scalars, blobs, lists, maps, intervals, and records through `fields()`, tuples and pairs) with an `Encoder` and `Decoder` over statusbar's buffer builders; PDU framing (`next_pdu`), parsing and serializing of the Command, Response and Notification2 messages; `status_for` |
 | `oca` | The AES70-2 data types of the connection management classes (media stream endpoints and modes, ports, counters, network interfaces and IPv4 settings, media clock rates, time sources) as OCP.1 values; the AES70-21 AES67 endpoint adaptation data (`Aes67EndpointAdaptationData`) |
+| `uuid` | UUIDs (RFC 9562): the octets, the lower-case text form and name-based version 5 UUIDs (`name_based_v5`), with the SHA-1 (RFC 3174) they need, for programs that derive stable IDs for what they present (AMWA NMOS IS-04 resources) |
 
 Each module is described in [docs](docs/README.md).
 
